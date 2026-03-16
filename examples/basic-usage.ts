@@ -1,4 +1,4 @@
-import { Modulex, AuthenticationError } from 'modulex';
+import { Modulex, AuthenticationError } from 'modulex-js';
 
 async function main() {
   // Initialize client

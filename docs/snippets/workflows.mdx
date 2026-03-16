@@ -12,7 +12,7 @@ npm install modulex
 ## Initialize Client
 
 ```typescript
-import { Modulex } from 'modulex';
+import { Modulex } from 'modulex-js';
 
 const client = new Modulex({
   apiKey: 'mx_live_...',
@@ -168,7 +168,7 @@ Returns the full workflow object, including `workflow_schema`, `edit_version`, `
 </ParamField>
 
 ```typescript
-import { Modulex, NotFoundError, RateLimitError } from 'modulex';
+import { Modulex, NotFoundError, RateLimitError } from 'modulex-js';
 
 try {
   const workflow = await client.workflows.get('550e8400-e29b-41d4-a716-446655440000');
@@ -230,7 +230,7 @@ Soft-deletes a workflow. The workflow is marked with a `deleted_at` timestamp bu
 </ParamField>
 
 ```typescript
-import { Modulex, NotFoundError } from 'modulex';
+import { Modulex, NotFoundError } from 'modulex-js';
 
 try {
   const result = await client.workflows.delete('550e8400-e29b-41d4-a716-446655440000');

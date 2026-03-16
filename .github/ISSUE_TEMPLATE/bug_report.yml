@@ -6,7 +6,7 @@ body:
     id: sdk-version
     attributes:
       label: SDK Version
-      description: Run `npm list modulex` or check package.json
+      description: Run `npm list modulex-js` or check package.json
       placeholder: "0.1.0"
     validations:
       required: true

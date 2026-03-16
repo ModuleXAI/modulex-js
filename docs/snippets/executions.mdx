@@ -12,7 +12,7 @@ npm install modulex
 ## Initialize Client
 
 ```typescript
-import { Modulex } from 'modulex';
+import { Modulex } from 'modulex-js';
 
 const client = new Modulex({
   apiKey: 'mx_live_...',
@@ -174,7 +174,7 @@ Retrieves the current LangGraph checkpoint state for a running or completed work
 </ParamField>
 
 ```typescript
-import { Modulex, NotFoundError } from 'modulex';
+import { Modulex, NotFoundError } from 'modulex-js';
 
 try {
   const state = await client.executions.getState('thread-uuid-here');
@@ -263,7 +263,7 @@ Connects to the SSE stream for a running execution and yields typed events as th
 </ParamField>
 
 ```typescript
-import { Modulex, NotFoundError, RateLimitError } from 'modulex';
+import { Modulex, NotFoundError, RateLimitError } from 'modulex-js';
 
 const execution = await client.executions.run({
   workflowId: '550e8400-e29b-41d4-a716-446655440000',

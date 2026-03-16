@@ -1,4 +1,4 @@
-import { Modulex } from 'modulex';
+import { Modulex } from 'modulex-js';
 
 async function main() {
   const client = new Modulex({

@@ -1,4 +1,4 @@
-import { Modulex } from 'modulex';
+import { Modulex } from 'modulex-js';
 import { readFile } from 'fs/promises';
 
 async function main() {

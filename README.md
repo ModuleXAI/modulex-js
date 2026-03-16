@@ -1,9 +1,9 @@
-# modulex
+# modulex-js
 
 [![CI](https://github.com/ModuleXAI/modulex-js/actions/workflows/ci.yml/badge.svg)](https://github.com/ModuleXAI/modulex-js/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/modulex.svg)](https://www.npmjs.com/package/modulex)
+[![npm version](https://img.shields.io/npm/v/modulex-js.svg)](https://www.npmjs.com/package/modulex-js)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/node/v/modulex.svg)](https://nodejs.org)
+[![Node.js](https://img.shields.io/node/v/modulex-js.svg)](https://nodejs.org)
 
 Official JavaScript/TypeScript SDK for the [ModuleX](https://modulex.dev) AI workflow orchestration platform.
 
@@ -17,17 +17,17 @@ Official JavaScript/TypeScript SDK for the [ModuleX](https://modulex.dev) AI wor
 ## Installation
 
 ```bash
-npm install modulex
+npm install modulex-js
 # or
-pnpm add modulex
+pnpm add modulex-js
 # or
-yarn add modulex
+yarn add modulex-js
 ```
 
 ## Quick Start
 
 ```typescript
-import { Modulex } from 'modulex';
+import { Modulex } from 'modulex-js';
 
 const client = new Modulex({
   apiKey: 'mx_live_...',
@@ -45,7 +45,7 @@ const { workflows } = await client.workflows.list({ status: 'active' });
 ### JavaScript (CommonJS)
 
 ```javascript
-const { Modulex } = require('modulex');
+const { Modulex } = require('modulex-js');
 
 const client = new Modulex({
   apiKey: process.env.MODULEX_API_KEY,
@@ -288,7 +288,7 @@ import {
   RateLimitError,
   AuthenticationError,
   ValidationError,
-} from 'modulex';
+} from 'modulex-js';
 
 try {
   const workflow = await client.workflows.get('invalid-id');
@@ -335,7 +335,7 @@ import type {
   WorkflowRunParams,
   WorkflowSSEEvent,
   SSEEvent,
-} from 'modulex';
+} from 'modulex-js';
 ```
 
 ## Browser Support

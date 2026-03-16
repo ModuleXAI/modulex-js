@@ -1,4 +1,4 @@
-import { Modulex, StreamError } from 'modulex';
+import { Modulex, StreamError } from 'modulex-js';
 
 async function main() {
   const client = new Modulex({
