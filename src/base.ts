@@ -25,7 +25,7 @@ function toSnakeCase(str: string): string {
 function convertKeysToSnakeCase(obj: unknown): unknown {
   if (obj === null || obj === undefined) return obj;
   if (Array.isArray(obj)) return obj.map(convertKeysToSnakeCase);
-  if (typeof obj === 'object' && !(obj instanceof Date) && !(obj instanceof File) && !(obj instanceof Blob)) {
+  if (typeof obj === 'object' && !(obj instanceof Date) && !(obj instanceof Blob) && !(typeof File !== 'undefined' && obj instanceof File)) {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
       result[toSnakeCase(key)] = convertKeysToSnakeCase(value);
