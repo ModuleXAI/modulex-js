@@ -1,0 +1,56 @@
+name: Bug Report
+description: Report a bug in the ModuleX JS SDK
+labels: ["bug"]
+body:
+  - type: input
+    id: sdk-version
+    attributes:
+      label: SDK Version
+      description: Run `npm list modulex` or check package.json
+      placeholder: "0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: runtime
+    attributes:
+      label: Runtime & Version
+      placeholder: "Node.js 20.11.0 / Bun 1.1 / Chrome 124"
+    validations:
+      required: true
+  - type: input
+    id: endpoint
+    attributes:
+      label: API Endpoint (if applicable)
+      placeholder: "POST /workflows/run"
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Clear description of the bug
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction Steps
+      description: Minimal code to reproduce the issue
+      render: typescript
+    validations:
+      required: true
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Stack traces, screenshots, related issues, etc.

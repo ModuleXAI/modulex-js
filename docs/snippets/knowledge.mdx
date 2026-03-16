@@ -1,0 +1,487 @@
+---
+title: "Knowledge"
+description: "Create and manage knowledge bases, upload documents, run semantic and hybrid searches, and retrieve RAG context."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## list
+
+Returns all knowledge bases for the organization.
+
+<ParamField path="params.status" type="string" optional>
+  Filter by status: `"active"`, `"archived"`.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Max results. Range: 1–500. Default: 100.
+</ParamField>
+
+<ParamField path="params.offset" type="number" optional>
+  Pagination offset. Default: 0.
+</ParamField>
+
+```typescript
+const bases = await client.knowledge.list({ status: 'active' });
+
+for (const kb of bases) {
+  console.log(`${kb.name} — ${kb.document_count} docs — ${kb.status}`);
+}
+```
+
+## create
+
+Creates a new knowledge base with embedding and chunking configuration.
+
+<ParamField path="params.name" type="string" required>
+  Display name. 1–255 characters.
+</ParamField>
+
+<ParamField path="params.embeddingConfig" type="object" required>
+  Embedding model configuration: `provider_credential_id`, `provider`, `model`, `dimension`.
+</ParamField>
+
+<ParamField path="params.chunkingConfig" type="object" optional>
+  Document chunking strategy: `strategy`, `chunk_size`, `overlap`, `separators`.
+</ParamField>
+
+```typescript
+const kb = await client.knowledge.create({
+  name: 'Product Documentation',
+  description: 'All product manuals and release notes',
+  embeddingConfig: {
+    provider_credential_id: 'openai-cred-uuid',
+    provider: 'openai',
+    model: 'text-embedding-3-small',
+    dimension: 1536,
+  },
+  chunkingConfig: {
+    strategy: 'recursive',
+    chunk_size: 1000,
+    overlap: 200,
+    separators: ['\n\n', '\n', '. '],
+  },
+});
+
+console.log(kb.id);      // "kb-uuid"
+console.log(kb.name);    // "Product Documentation"
+console.log(kb.status);  // "active"
+```
+
+## stats
+
+Returns organization-wide statistics across all knowledge bases.
+
+```typescript
+const stats = await client.knowledge.stats();
+
+console.log(stats.total_knowledge_bases);  // 4
+console.log(stats.total_documents);        // 1200
+console.log(stats.total_chunks);           // 48000
+console.log(stats.total_size_bytes);       // 524288000
+```
+
+## get
+
+Returns full details for a single knowledge base.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+```typescript
+const kb = await client.knowledge.get('kb-uuid-here');
+
+console.log(kb.name);             // "Product Documentation"
+console.log(kb.embedding_config); // { provider: "openai", model: "text-embedding-3-small", ... }
+console.log(kb.chunking_config);  // { strategy: "recursive", chunk_size: 1000, ... }
+console.log(kb.document_count);   // 42
+```
+
+## update
+
+Updates a knowledge base's name, description, or configuration.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+```typescript
+const updated = await client.knowledge.update('kb-uuid-here', {
+  name: 'Product Documentation v2',
+  description: 'Updated to include v3.0 release notes',
+  chunkingConfig: {
+    strategy: 'recursive',
+    chunk_size: 800,
+    overlap: 150,
+  },
+});
+
+console.log(updated.name);  // "Product Documentation v2"
+```
+
+## delete
+
+Permanently deletes a knowledge base and optionally its stored files.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+<ParamField path="params.deleteFiles" type="boolean" optional>
+  Also delete uploaded source files. Default: `true`.
+</ParamField>
+
+```typescript
+// Delete the knowledge base and all its files
+await client.knowledge.delete('kb-uuid-here');
+
+// Delete the index only, keep the source files
+await client.knowledge.delete('kb-uuid-here', { deleteFiles: false });
+```
+
+## archive
+
+Archives a knowledge base, making it read-only and excluded from active searches.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base to archive.
+</ParamField>
+
+```typescript
+const result = await client.knowledge.archive('kb-uuid-here');
+console.log(result.status);  // "archived"
+```
+
+## documents
+
+Returns documents in a knowledge base with optional status filtering.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+<ParamField path="params.status" type="string" optional>
+  Filter: `"pending"`, `"processing"`, `"ready"`, `"failed"`.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Max results. Range: 1–500. Default: 100.
+</ParamField>
+
+```typescript
+const docs = await client.knowledge.documents('kb-uuid-here', { status: 'ready' });
+
+for (const doc of docs) {
+  console.log(`${doc.filename} — ${doc.chunk_count} chunks — ${doc.status}`);
+}
+```
+
+## uploadDocument
+
+Uploads a file and queues it for processing and embedding. Supports PDF, DOCX, TXT, MD, HTML, CSV, JSON, XLSX, PPTX. Max size: 50 MB.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+<ParamField path="params.file" type="File | Blob" required>
+  File to upload.
+</ParamField>
+
+<ParamField path="params.metadata" type="object" optional>
+  Arbitrary key-value metadata to attach to the document.
+</ParamField>
+
+```typescript
+import { readFileSync } from 'fs';
+
+const fileBuffer = readFileSync('./release-notes-v3.pdf');
+const file = new File([fileBuffer], 'release-notes-v3.pdf', { type: 'application/pdf' });
+
+const doc = await client.knowledge.uploadDocument('kb-uuid-here', {
+  file,
+  metadata: { version: '3.0', department: 'engineering' },
+});
+
+console.log(doc.id);        // "doc-uuid"
+console.log(doc.filename);  // "release-notes-v3.pdf"
+console.log(doc.status);    // "pending" → progresses to "processing" → "ready"
+```
+
+## getDocument
+
+Returns metadata for a single document.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+<ParamField path="documentId" type="string" required>
+  UUID of the document.
+</ParamField>
+
+```typescript
+const doc = await client.knowledge.getDocument('kb-uuid-here', 'doc-uuid-here');
+
+console.log(doc.filename);    // "release-notes-v3.pdf"
+console.log(doc.status);      // "ready"
+console.log(doc.chunk_count); // 87
+console.log(doc.size_bytes);  // 2097152
+```
+
+## documentStatus
+
+Returns just the processing status of a document. Useful for polling.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+<ParamField path="documentId" type="string" required>
+  UUID of the document.
+</ParamField>
+
+```typescript
+// Poll until document is ready
+let status = 'pending';
+while (status !== 'ready' && status !== 'failed') {
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  const info = await client.knowledge.documentStatus('kb-uuid-here', 'doc-uuid-here');
+  status = info.status;
+  console.log(`Document status: ${status}`);
+}
+```
+
+## deleteDocument
+
+Deletes a document from the knowledge base.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+<ParamField path="documentId" type="string" required>
+  UUID of the document.
+</ParamField>
+
+<ParamField path="params.deleteFile" type="boolean" optional>
+  Also delete the uploaded source file. Default: `true`.
+</ParamField>
+
+```typescript
+await client.knowledge.deleteDocument('kb-uuid-here', 'doc-uuid-here');
+```
+
+## retryDocument
+
+Re-queues a failed document for processing.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+<ParamField path="documentId" type="string" required>
+  UUID of the failed document.
+</ParamField>
+
+```typescript
+const doc = await client.knowledge.retryDocument('kb-uuid-here', 'doc-uuid-here');
+console.log(doc.status);  // "pending"
+```
+
+## documentChunks
+
+Returns the individual text chunks generated from a document.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+<ParamField path="documentId" type="string" required>
+  UUID of the document.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Max chunks. Range: 1–500. Default: 100.
+</ParamField>
+
+<ParamField path="params.offset" type="number" optional>
+  Pagination offset. Default: 0.
+</ParamField>
+
+```typescript
+const result = await client.knowledge.documentChunks('kb-uuid-here', 'doc-uuid-here', {
+  limit: 20,
+  offset: 0,
+});
+
+console.log(result.count);  // 87
+
+for (const chunk of result.chunks) {
+  console.log(`Chunk ${chunk.index}: ${chunk.content.slice(0, 100)}...`);
+}
+```
+
+## search
+
+Performs a semantic (vector) search within a single knowledge base.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base to search.
+</ParamField>
+
+<ParamField path="params.query" type="string" required>
+  Natural language search query.
+</ParamField>
+
+<ParamField path="params.topK" type="number" optional>
+  Number of results to return. Range: 1–50. Default: 5.
+</ParamField>
+
+<ParamField path="params.minScore" type="number" optional>
+  Minimum similarity score threshold (0.0–1.0). Default: 0.0.
+</ParamField>
+
+```typescript
+const results = await client.knowledge.search('kb-uuid-here', {
+  query: 'How do I reset my password?',
+  topK: 5,
+  minScore: 0.7,
+  includeContent: true,
+  includeMetadata: true,
+});
+
+for (const result of results) {
+  console.log(`Score: ${result.score.toFixed(3)}`);
+  console.log(`Content: ${result.content.slice(0, 200)}...`);
+  console.log(`Document: ${result.document_id}`);
+}
+```
+
+## searchMultiple
+
+Runs a semantic search across multiple knowledge bases simultaneously.
+
+<ParamField path="params.knowledgeBaseIds" type="string[]" required>
+  Array of knowledge base UUIDs to search.
+</ParamField>
+
+<ParamField path="params.query" type="string" required>
+  Natural language search query.
+</ParamField>
+
+<ParamField path="params.topK" type="number" optional>
+  Results per knowledge base. Default: 5.
+</ParamField>
+
+```typescript
+const results = await client.knowledge.searchMultiple({
+  knowledgeBaseIds: ['kb-uuid-1', 'kb-uuid-2', 'kb-uuid-3'],
+  query: 'deployment configuration options',
+  topK: 3,
+  minScore: 0.6,
+});
+
+for (const result of results) {
+  console.log(`[${result.knowledge_base_id}] ${result.score.toFixed(3)}: ${result.content.slice(0, 100)}`);
+}
+```
+
+## hybridSearch
+
+Combines semantic (vector) and keyword (BM25) search with configurable weighting.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+<ParamField path="params.query" type="string" required>
+  Search query.
+</ParamField>
+
+<ParamField path="params.keywordWeight" type="number" optional>
+  Weight for keyword matching (0.0–1.0). Default: 0.3.
+</ParamField>
+
+<ParamField path="params.semanticWeight" type="number" optional>
+  Weight for semantic similarity (0.0–1.0). Default: 0.7.
+</ParamField>
+
+```typescript
+const results = await client.knowledge.hybridSearch('kb-uuid-here', {
+  query: 'OAuth2 authentication flow PKCE',
+  topK: 8,
+  keywordWeight: 0.4,
+  semanticWeight: 0.6,
+  minScore: 0.5,
+});
+
+for (const result of results) {
+  console.log(`Hybrid score: ${result.score.toFixed(3)} — ${result.content.slice(0, 80)}`);
+}
+```
+
+## retrieveContext
+
+Retrieves pre-formatted context text for RAG pipelines, respecting token limits.
+
+<ParamField path="knowledgeBaseId" type="string" required>
+  UUID of the knowledge base.
+</ParamField>
+
+<ParamField path="params.query" type="string" required>
+  Query to retrieve context for.
+</ParamField>
+
+<ParamField path="params.maxTokens" type="number" optional>
+  Maximum context tokens. Range: 100–10000. Default: 2000.
+</ParamField>
+
+<ParamField path="params.topK" type="number" optional>
+  Candidate chunks to consider. Range: 1–50. Default: 10.
+</ParamField>
+
+<ParamField path="params.minScore" type="number" optional>
+  Minimum similarity threshold. Default: 0.3.
+</ParamField>
+
+```typescript
+const { context, query } = await client.knowledge.retrieveContext('kb-uuid-here', {
+  query: 'How does billing work for enterprise plans?',
+  maxTokens: 3000,
+  topK: 10,
+  minScore: 0.4,
+});
+
+// Inject context into an LLM prompt
+const systemPrompt = `Answer based on this context:\n\n${context}`;
+console.log(`Context length: ~${context.split(' ').length} words`);
+```
+
+## supportedFileTypes
+
+Returns the list of file types accepted for document upload. No authentication required.
+
+```typescript
+const info = await client.knowledge.supportedFileTypes();
+
+console.log(info.supported_types);     // ["pdf", "docx", "doc", "txt", "md", "html", "csv", "json", "xlsx", "pptx"]
+console.log(info.max_file_size_mb);    // 50.0
+console.log(info.max_file_size_bytes); // 52428800
+```

@@ -1,0 +1,334 @@
+---
+title: "Executions"
+description: "Run workflows in four modes, stream real-time events via SSE, resume interrupted workflows, and cancel running executions."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## run
+
+Starts a workflow execution. Supports four distinct modes depending on what you pass.
+
+### Mode 1 — Run an existing workflow by ID
+
+<ParamField path="params.workflowId" type="string" required>
+  UUID of an existing workflow stored in the database.
+</ParamField>
+
+<ParamField path="params.input" type="object" optional>
+  Input values passed to the workflow's entry node.
+</ParamField>
+
+<ParamField path="params.stream" type="boolean" optional>
+  Enable SSE streaming. Default: `true`. When `true`, call `listen` to receive events.
+</ParamField>
+
+<ParamField path="params.ephemeral" type="boolean" optional>
+  When `true`, no chat record is created. Default: `false`.
+</ParamField>
+
+<ParamField path="params.isPrivate" type="boolean" optional>
+  When `true`, the resulting chat is visible only to the creator. Default: `false`.
+</ParamField>
+
+```typescript
+const execution = await client.executions.run({
+  workflowId: '550e8400-e29b-41d4-a716-446655440000',
+  input: {
+    messages: [{ role: 'user', content: 'I need help with my order #12345' }],
+  },
+  stream: true,
+  ephemeral: false,
+  isPrivate: false,
+});
+
+console.log(execution.run_id);           // "run-uuid"
+console.log(execution.thread_id);        // "thread-uuid"
+console.log(execution.chat_id);          // "chat-uuid"
+console.log(execution.workflow_source);  // "database"
+console.log(execution.status);           // "running"
+```
+
+### Mode 2 — Run an ad-hoc workflow (no database entry)
+
+Pass a full `WorkflowDefinition` inline without saving it first.
+
+<ParamField path="params.workflow" type="object" required>
+  Complete `WorkflowDefinition` object.
+</ParamField>
+
+```typescript
+const execution = await client.executions.run({
+  workflow: {
+    metadata: { name: 'Quick Summarizer', version: '1.0.0', author: 'dev', tags: [] },
+    config: {
+      default_llm: { integration_name: 'openai', provider_id: 'openai', model_id: 'gpt-4o-mini', temperature: 0.3 },
+      recursion_limit: 10,
+      checkpointing: 'postgres',
+    },
+    state_schema: {
+      fields: {
+        messages: { type: 'messages', description: 'Conversation', reducer: 'add', required: true, default: null },
+      },
+    },
+    nodes: [
+      {
+        id: 'summarizer',
+        type: 'llm',
+        name: 'Summarizer',
+        enabled: true,
+        llm_config: {
+          llm: { integration_name: 'openai', provider_id: 'openai', model_id: 'gpt-4o-mini', temperature: 0.3 },
+          system_prompt: 'Summarize the following text concisely.',
+          user_prompt: '{{input.text}}',
+        },
+      },
+    ],
+    edges: [],
+    entry_point: 'summarizer',
+  },
+  input: { text: 'LangGraph is a framework for building stateful, multi-actor applications...' },
+  stream: true,
+  ephemeral: true,
+});
+
+console.log(execution.workflow_source);  // "request"
+```
+
+### Mode 3 — Direct LLM call
+
+Invoke an LLM directly without defining a full workflow graph.
+
+<ParamField path="params.llm.integrationName" type="string" required>
+  LLM provider integration name, e.g., `"openai"`, `"anthropic"`.
+</ParamField>
+
+<ParamField path="params.llm.modelId" type="string" required>
+  Model identifier, e.g., `"gpt-4o-mini"`, `"claude-sonnet-4-20250514"`.
+</ParamField>
+
+<ParamField path="params.llm.credentialId" type="string" optional>
+  UUID of a stored credential to use. Omit to use the integration's default.
+</ParamField>
+
+```typescript
+const execution = await client.executions.run({
+  llm: {
+    integration_name: 'openai',
+    provider_id: 'openai',
+    model_id: 'gpt-4o-mini',
+    temperature: 0.5,
+  },
+  input: {
+    messages: [
+      { role: 'system', content: 'You are a helpful assistant.' },
+      { role: 'user', content: 'What is the capital of France?' },
+    ],
+  },
+  stream: true,
+  ephemeral: true,
+});
+
+console.log(execution.workflow_source);  // "llm"
+```
+
+### Mode 4 — Run a system workflow
+
+Execute a built-in system workflow by name.
+
+<ParamField path="params.systemWorkflow" type="string" required>
+  Name of the system workflow to execute.
+</ParamField>
+
+```typescript
+const execution = await client.executions.run({
+  systemWorkflow: 'document_processor',
+  input: { document_url: 'https://example.com/report.pdf' },
+  config: { output_format: 'markdown' },
+});
+
+console.log(execution.workflow_source);  // "system:document_processor"
+```
+
+## getState
+
+Retrieves the current LangGraph checkpoint state for a running or completed workflow thread.
+
+<ParamField path="threadId" type="string" required>
+  Thread ID returned by `run` or `resume`.
+</ParamField>
+
+```typescript
+import { Modulex, NotFoundError } from 'modulex';
+
+try {
+  const state = await client.executions.getState('thread-uuid-here');
+
+  console.log(state.thread_id);       // "thread-uuid"
+  console.log(state.run_id);          // "run-uuid"
+  console.log(state.checkpoint_id);   // "checkpoint-uuid"
+  console.log(state.state);           // Current graph state object
+  console.log(state.next);            // ["next_node_id"] — pending nodes
+  console.log(state.pending_writes);  // 0
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.error('Thread not found.');
+  } else {
+    throw error;
+  }
+}
+```
+
+## resume
+
+Resumes a workflow that has paused at an `interrupt` node, providing the human's response value.
+
+<ParamField path="threadId" type="string" required>
+  Thread ID of the paused workflow.
+</ParamField>
+
+<ParamField path="params.workflowId" type="string" required>
+  UUID of the workflow (or pass `workflow` with a `WorkflowDefinition`).
+</ParamField>
+
+<ParamField path="params.resumeValue" type="any" required>
+  The value provided by the human to satisfy the interrupt. Shape depends on the interrupt node's `resume_schema`.
+</ParamField>
+
+<ParamField path="params.runId" type="string" required>
+  Run ID from the original execution.
+</ParamField>
+
+<ParamField path="params.stream" type="boolean" optional>
+  Enable SSE streaming after resumption. Default: `true`.
+</ParamField>
+
+```typescript
+// After receiving an "interrupt" SSE event, resume with the human's answer
+const resumed = await client.executions.resume('thread-uuid-here', {
+  workflowId: '550e8400-e29b-41d4-a716-446655440000',
+  resumeValue: { approved: true, comment: 'Looks good, proceed.' },
+  runId: 'run-uuid-here',
+  stream: true,
+});
+
+console.log(resumed.status);   // "resumed"
+console.log(resumed.run_id);   // New run ID for post-resume execution
+```
+
+## cancel
+
+Requests cancellation of an actively running workflow execution.
+
+<ParamField path="runId" type="string" required>
+  Run ID of the execution to cancel.
+</ParamField>
+
+<ParamField path="params.reason" type="string" optional>
+  Human-readable reason for the cancellation, stored in logs.
+</ParamField>
+
+```typescript
+const result = await client.executions.cancel('run-uuid-here', {
+  reason: 'User closed the session',
+});
+
+console.log(result.status);   // "cancellation_requested"
+console.log(result.run_id);   // "run-uuid"
+console.log(result.reason);   // "User closed the session"
+console.log(result.message);  // "Cancellation has been requested"
+```
+
+## listen
+
+Connects to the SSE stream for a running execution and yields typed events as they arrive. Use `for await...of` to consume the stream.
+
+<ParamField path="runId" type="string" required>
+  Run ID returned by `run` or `resume`.
+</ParamField>
+
+```typescript
+import { Modulex, NotFoundError, RateLimitError } from 'modulex';
+
+const execution = await client.executions.run({
+  workflowId: '550e8400-e29b-41d4-a716-446655440000',
+  input: { messages: [{ role: 'user', content: 'Analyze Q4 sales data' }] },
+  stream: true,
+});
+
+try {
+  for await (const event of client.executions.listen(execution.run_id)) {
+    switch (event.type) {
+      case 'metadata':
+        console.log(`Workflow: ${event.data.workflow_name} v${event.data.workflow_version}`);
+        console.log(`Nodes: ${event.data.nodes.map((n: { id: string }) => n.id).join(', ')}`);
+        break;
+
+      case 'node_update':
+        if (event.data.status === 'started') {
+          console.log(`Starting node: ${event.data.node_id} (${event.data.node_type})`);
+        } else if (event.data.status === 'completed') {
+          console.log(`Completed node: ${event.data.node_id} in ${event.data.execution_time_ms}ms`);
+          console.log('Output:', event.data.output);
+        } else if (event.data.status === 'error') {
+          console.error(`Node ${event.data.node_id} failed:`, event.data.error);
+        }
+        break;
+
+      case 'interrupt':
+        console.log(`Workflow paused at node: ${event.data.node_id}`);
+        console.log(`Message: ${event.data.message}`);
+        console.log(`Instructions: ${event.data.resume_instructions}`);
+        // Resume with human input
+        await client.executions.resume(execution.thread_id, {
+          workflowId: '550e8400-e29b-41d4-a716-446655440000',
+          resumeValue: { decision: 'approve' },
+          runId: execution.run_id,
+          stream: true,
+        });
+        break;
+
+      case 'resumed':
+        console.log(`Workflow resumed — new run: ${event.data.run_id}`);
+        break;
+
+      case 'done':
+        console.log(`Workflow complete in ${event.data.total_execution_time_ms}ms`);
+        console.log(`Steps executed: ${event.data.steps_executed}`);
+        console.log('Final state:', event.data.final_state);
+        break;
+
+      case 'error':
+        console.error(`Execution failed: ${event.data.error_message}`);
+        console.error(`Error type: ${event.data.error_type}`);
+        if (event.data.node_id) {
+          console.error(`Failed at node: ${event.data.node_id}`);
+        }
+        break;
+    }
+  }
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.error('Run not found or already completed.');
+  } else if (error instanceof RateLimitError) {
+    console.error(`Rate limited. Retry after ${error.retryAfter}s`);
+  } else {
+    throw error;
+  }
+}
+```

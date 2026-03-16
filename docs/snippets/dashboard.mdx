@@ -1,0 +1,214 @@
+---
+title: "Dashboard"
+description: "Access audit logs, analytics overviews, tool usage analytics, LLM usage breakdowns, and organization user management."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## logs
+
+Returns the organization's audit log. Requires owner role. Supports filtering by category, operation, and date range.
+
+<ParamField path="params.limit" type="number" optional>
+  Max log entries. Range: 1–1000. Default: 50.
+</ParamField>
+
+<ParamField path="params.offset" type="number" optional>
+  Pagination offset. Default: 0.
+</ParamField>
+
+<ParamField path="params.category" type="string" optional>
+  Filter by log category: `"CREDENTIALS"`, `"MEMBERSHIP"`, `"ORGANIZATION"`.
+</ParamField>
+
+<ParamField path="params.operation" type="string" optional>
+  Filter by a specific operation name (e.g., `"credential_created"`, `"user_invited"`).
+</ParamField>
+
+<ParamField path="params.startDate" type="string" optional>
+  ISO 8601 start of the date range.
+</ParamField>
+
+<ParamField path="params.endDate" type="string" optional>
+  ISO 8601 end of the date range.
+</ParamField>
+
+```typescript
+// Recent credential operations
+const credLogs = await client.dashboard.logs({
+  category: 'CREDENTIALS',
+  limit: 100,
+  startDate: '2026-03-01T00:00:00Z',
+  endDate: '2026-03-09T23:59:59Z',
+});
+
+console.log(credLogs.data.total_count);  // 47
+console.log(credLogs.data.has_next);     // false
+
+for (const entry of credLogs.data.logs) {
+  console.log(`${entry.timestamp} — ${entry.operation} by ${entry.performed_by_email}`);
+}
+
+// Membership audit trail
+const membershipLogs = await client.dashboard.logs({
+  category: 'MEMBERSHIP',
+  operation: 'user_invited',
+  limit: 20,
+});
+```
+
+## analyticsOverview
+
+Returns the organization's analytics overview including member counts, integration coverage, credential counts, and current-week credit usage.
+
+<ParamField path="params.limit" type="number" optional>
+  Max credential usage log entries. Range: 1–1000. Default: 20.
+</ParamField>
+
+<ParamField path="params.offset" type="number" optional>
+  Pagination offset for credential usage logs. Default: 0.
+</ParamField>
+
+```typescript
+const overview = await client.dashboard.analyticsOverview();
+
+const data = overview.data.overview;
+console.log(data.active_member_count);              // 8
+console.log(data.configured_integrations_count);    // 6
+console.log(data.total_integrations_count);         // 15
+console.log(data.total_credentials_count);          // 11
+console.log(data.current_week_credit_usage);        // 5432.10
+
+// Subscription details
+console.log(data.subscription.plan_name);   // "Pro"
+console.log(data.subscription.status);      // "active"
+```
+
+## analyticsTools
+
+Returns tool execution analytics with breakdowns by tool and time period.
+
+<ParamField path="params.period" type="string" optional>
+  Time window: `"24h"`, `"7d"`, `"30d"`, `"90d"`. Default: `"7d"`.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Max tool entries. Default: 20.
+</ParamField>
+
+<ParamField path="params.offset" type="number" optional>
+  Pagination offset. Default: 0.
+</ParamField>
+
+```typescript
+// Last 30 days of tool usage
+const toolStats = await client.dashboard.analyticsTools({ period: '30d' });
+
+for (const tool of toolStats.data.tools) {
+  console.log(`${tool.integration_name}.${tool.action_name}`);
+  console.log(`  Total calls: ${tool.total_calls}`);
+  console.log(`  Success rate: ${(tool.success_rate * 100).toFixed(1)}%`);
+  console.log(`  Avg duration: ${tool.avg_duration_ms}ms`);
+}
+
+// Last 24 hours breakdown
+const recent = await client.dashboard.analyticsTools({ period: '24h', limit: 10 });
+console.log(`Top tool today: ${recent.data.tools[0]?.integration_name}`);
+```
+
+## analyticsLlmUsage
+
+Returns LLM usage analytics with token consumption breakdowns by model and provider.
+
+<ParamField path="params.period" type="string" optional>
+  Time window: `"24h"`, `"7d"`, `"30d"`, `"90d"`. Default: `"7d"`.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Max model entries. Default: 20.
+</ParamField>
+
+<ParamField path="params.offset" type="number" optional>
+  Pagination offset. Default: 0.
+</ParamField>
+
+```typescript
+const llmUsage = await client.dashboard.analyticsLlmUsage({ period: '7d' });
+
+for (const model of llmUsage.data.models) {
+  console.log(`${model.provider}/${model.model_id}`);
+  console.log(`  Input tokens:  ${model.input_tokens.toLocaleString()}`);
+  console.log(`  Output tokens: ${model.output_tokens.toLocaleString()}`);
+  console.log(`  Total calls:   ${model.total_calls}`);
+  console.log(`  Estimated cost: $${model.estimated_cost_usd.toFixed(4)}`);
+}
+
+// Total token usage this week
+const totalInput = llmUsage.data.models.reduce((sum, m) => sum + m.input_tokens, 0);
+const totalOutput = llmUsage.data.models.reduce((sum, m) => sum + m.output_tokens, 0);
+console.log(`Total tokens: ${(totalInput + totalOutput).toLocaleString()}`);
+```
+
+## users
+
+Returns a paginated, filterable list of organization users with invitation and seat information.
+
+<ParamField path="params.search" type="string" optional>
+  Full-text search across name and email.
+</ParamField>
+
+<ParamField path="params.status" type="string" optional>
+  Filter by user status: `"active"`, `"inactive"`.
+</ParamField>
+
+<ParamField path="params.sortBy" type="string" optional>
+  Sort field: `"name"`, `"email"`, `"created_at"`, `"last_active"`. Default: `"created_at"`.
+</ParamField>
+
+<ParamField path="params.order" type="string" optional>
+  Sort direction: `"asc"`, `"desc"`. Default: `"desc"`.
+</ParamField>
+
+<ParamField path="params.page" type="number" optional>
+  Page number (1-indexed). Default: 1.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Users per page. Range: 1–100. Default: 10.
+</ParamField>
+
+```typescript
+// Paginated user list
+const result = await client.dashboard.users({
+  page: 1,
+  limit: 25,
+  sortBy: 'last_active',
+  order: 'desc',
+});
+
+console.log(`${result.total} users — ${result.invitation_count} pending invitations`);
+console.log(`Seats used: ${result.total} / ${result.max_seats}`);
+
+for (const user of result.users) {
+  console.log(`${user.email} (${user.role}) — last active: ${user.last_active_at ?? 'never'}`);
+}
+
+// Search for a specific user
+const searched = await client.dashboard.users({ search: 'alice@example.com' });
+console.log(searched.users[0]?.role);  // "admin"
+```

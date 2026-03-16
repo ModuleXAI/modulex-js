@@ -1,0 +1,99 @@
+---
+title: "Notifications"
+description: "Retrieve and create in-app notifications for users and organizations."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## list
+
+Returns notifications for the authenticated user. Passing an `organizationId` in the client filters to organization-specific notifications.
+
+```typescript
+// All notifications for the user (across all orgs)
+const clientWithoutOrg = new Modulex({ apiKey: 'mx_live_...' });
+const allNotifs = await clientWithoutOrg.notifications.list();
+
+console.log(allNotifs.total);              // 12
+console.log(allNotifs.organization_id);    // null
+
+// Notifications scoped to a specific organization
+const orgNotifs = await client.notifications.list();
+
+console.log(orgNotifs.total);              // 3
+console.log(orgNotifs.organization_id);    // "org-uuid"
+
+for (const notif of orgNotifs.notifications) {
+  console.log(`[${notif.notification_topic}] ${notif.message}`);
+  console.log(`  Created: ${notif.created_at}`);
+  if (notif.notification_url) {
+    console.log(`  Link: ${notif.notification_url}`);
+  }
+  if (notif.expires_at) {
+    console.log(`  Expires: ${notif.expires_at}`);
+  }
+}
+```
+
+## create
+
+Creates an organization-scoped notification. Can be broadcast to all members (omit `notifiedTo`) or targeted at a specific user.
+
+<ParamField path="params.notificationTopic" type="string" required>
+  Topic category: `"integration"` or `"attention"`.
+</ParamField>
+
+<ParamField path="params.message" type="string" required>
+  Notification body text. 1–5000 characters.
+</ParamField>
+
+<ParamField path="params.notifiedTo" type="string" optional>
+  UUID of a specific organization member to notify. Omit to broadcast to all members.
+</ParamField>
+
+<ParamField path="params.notificationUrl" type="string" optional>
+  Deep-link URL associated with the notification. Max 500 characters.
+</ParamField>
+
+<ParamField path="params.expiresAt" type="string" optional>
+  ISO 8601 datetime after which the notification is no longer shown.
+</ParamField>
+
+```typescript
+// Broadcast to all organization members
+const broadcast = await client.notifications.create({
+  notificationTopic: 'attention',
+  message: 'Scheduled maintenance on 2026-03-15 from 02:00–04:00 UTC. Workflows may be temporarily unavailable.',
+  notificationUrl: 'https://status.modulex.io',
+  expiresAt: '2026-03-15T04:00:00Z',
+});
+
+console.log(broadcast.success);         // true
+console.log(broadcast.notification_id); // "notif-uuid"
+
+// Targeted notification for a specific user
+const targeted = await client.notifications.create({
+  notificationTopic: 'integration',
+  message: 'Your OpenAI API key is expiring in 7 days. Please rotate it to avoid service interruption.',
+  notifiedTo: 'user-uuid-here',
+  notificationUrl: 'https://app.modulex.io/credentials',
+  expiresAt: '2026-03-16T00:00:00Z',
+});
+
+console.log(targeted.success);  // true
+```

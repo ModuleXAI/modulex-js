@@ -1,0 +1,122 @@
+---
+title: "API Keys"
+description: "Create, list, retrieve, and revoke API keys for programmatic access to ModuleX."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## create
+
+Creates a new API key. The full key value is returned **only once** in the response — store it securely immediately.
+
+<ParamField path="params.name" type="string" required>
+  Human-readable label for the key. 1–255 characters.
+</ParamField>
+
+<ParamField path="params.organizationId" type="string" optional>
+  Scope the key to a specific organization UUID. When set, this key can only access that organization's resources and the `X-Organization-ID` header must match.
+</ParamField>
+
+<ParamField path="params.expiresAt" type="string" optional>
+  ISO 8601 datetime at which the key automatically expires. Omit for a non-expiring key.
+</ParamField>
+
+<ParamField path="params.rateLimitPerMinute" type="number" optional>
+  Per-minute request rate limit for this key. Range: 1–1000. Default: 60.
+</ParamField>
+
+```typescript
+const apiKey = await client.apiKeys.create({
+  name: 'Production Backend',
+  organizationId: '550e8400-e29b-41d4-a716-446655440000',
+  expiresAt: '2027-01-01T00:00:00Z',
+  rateLimitPerMinute: 120,
+});
+
+// IMPORTANT: Save apiKey.key now — it will never be shown again.
+console.log(apiKey.key);                  // "mx_live_xxxxxxxxxxxxxxxxxxx"
+console.log(apiKey.id);                   // "uuid"
+console.log(apiKey.key_hint);             // "mx_live_"
+console.log(apiKey.rate_limit_per_minute); // 120
+```
+
+## list
+
+Lists all API keys belonging to the authenticated user. Sensitive key data is always masked in list responses.
+
+<ParamField path="params.includeRevoked" type="boolean" optional>
+  When `true`, revoked keys are included in the results. Default: `false`.
+</ParamField>
+
+```typescript
+// List active keys only
+const keys = await client.apiKeys.list();
+
+// Include previously revoked keys
+const allKeys = await client.apiKeys.list({ includeRevoked: true });
+
+for (const key of allKeys) {
+  console.log(`${key.name} — hint: ${key.key_hint} — revoked: ${!key.is_active}`);
+}
+```
+
+## get
+
+Retrieves a single API key by ID. The full key value is never returned — only masked metadata.
+
+<ParamField path="keyId" type="string" required>
+  UUID of the API key to retrieve.
+</ParamField>
+
+```typescript
+const keyId = '7f3e1a2b-cd45-6789-ef01-234567890abc';
+
+const key = await client.apiKeys.get(keyId);
+
+console.log(key.name);                   // "Production Backend"
+console.log(key.key_hint);               // "mx_live_"
+console.log(key.organization_id);        // "550e8400-..."
+console.log(key.expires_at);             // "2027-01-01T00:00:00Z"
+console.log(key.rate_limit_per_minute);  // 120
+console.log(key.created_at);             // "2026-03-09T10:00:00Z"
+```
+
+## revoke
+
+Permanently revokes an API key. All subsequent requests using that key will receive `401 Unauthorized`. This action cannot be undone.
+
+<ParamField path="keyId" type="string" required>
+  UUID of the API key to revoke.
+</ParamField>
+
+```typescript
+import { Modulex, NotFoundError } from 'modulex';
+
+const keyId = '7f3e1a2b-cd45-6789-ef01-234567890abc';
+
+try {
+  await client.apiKeys.revoke(keyId);
+  console.log('Key revoked successfully.');
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.error('API key not found or already revoked.');
+  } else {
+    throw error;
+  }
+}
+```

@@ -1,0 +1,172 @@
+---
+title: "Deployments"
+description: "Create, manage, and activate versioned deployments of workflows. Each deployment is an immutable snapshot of a workflow schema."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## create
+
+Creates a new deployment snapshot of a workflow. At most one deployment per workflow can be live (`is_live: true`) at a time.
+
+<ParamField path="workflowId" type="string" required>
+  UUID of the workflow to deploy.
+</ParamField>
+
+<ParamField path="params.deploymentNote" type="string" optional>
+  Release notes or description for this deployment version.
+</ParamField>
+
+<ParamField path="params.schemaImageUrl" type="string" optional>
+  URL to a screenshot or diagram of the workflow canvas for this deployment.
+</ParamField>
+
+```typescript
+const deployment = await client.deployments.create(
+  '550e8400-e29b-41d4-a716-446655440000',
+  {
+    deploymentNote: 'Added retry logic for the summarizer node',
+    schemaImageUrl: 'https://cdn.example.com/workflows/support-agent-v2.png',
+  },
+);
+
+console.log(deployment.id);               // "deploy-uuid"
+console.log(deployment.workflow_id);      // "550e8400-..."
+console.log(deployment.name);             // "Customer Support Agent"
+console.log(deployment.version);          // "1.2.0"
+console.log(deployment.is_live);          // true
+console.log(deployment.deployed_by);      // "user-uuid"
+console.log(deployment.created_at);       // "2026-03-09T14:00:00Z"
+```
+
+## list
+
+Returns a paginated list of deployments for a workflow, ordered by creation date descending.
+
+<ParamField path="workflowId" type="string" required>
+  UUID of the workflow.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Maximum results to return. Range: 1–100. Default: 20.
+</ParamField>
+
+<ParamField path="params.offset" type="number" optional>
+  Number of records to skip for pagination. Default: 0.
+</ParamField>
+
+```typescript
+const result = await client.deployments.list('550e8400-e29b-41d4-a716-446655440000', {
+  limit: 10,
+  offset: 0,
+});
+
+console.log(result.total);  // 5
+for (const d of result.deployments) {
+  const liveTag = d.is_live ? ' [LIVE]' : '';
+  console.log(`${d.version}${liveTag} — deployed ${d.created_at}`);
+}
+```
+
+## get
+
+Returns a full deployment object including the `workflow_schema` snapshot, `input`, `config`, and `is_live` status.
+
+<ParamField path="workflowId" type="string" required>
+  UUID of the parent workflow.
+</ParamField>
+
+<ParamField path="deploymentId" type="string" required>
+  UUID of the deployment to retrieve.
+</ParamField>
+
+```typescript
+const deployment = await client.deployments.get(
+  '550e8400-e29b-41d4-a716-446655440000',
+  'deploy-uuid-here',
+);
+
+console.log(deployment.version);         // "1.2.0"
+console.log(deployment.is_live);         // true
+console.log(deployment.deployment_note); // "Added retry logic..."
+console.log(deployment.workflow_schema); // Full WorkflowDefinition snapshot
+```
+
+## activate
+
+Sets a specific deployment as the live (active) version for a workflow. Any previously live deployment is automatically deactivated.
+
+<ParamField path="workflowId" type="string" required>
+  UUID of the parent workflow.
+</ParamField>
+
+<ParamField path="deploymentId" type="string" required>
+  UUID of the deployment to activate.
+</ParamField>
+
+```typescript
+const result = await client.deployments.activate(
+  '550e8400-e29b-41d4-a716-446655440000',
+  'deploy-uuid-here',
+);
+
+console.log(result.success);                       // true
+console.log(result.deployment_id);                 // "deploy-uuid"
+console.log(result.previous_live_deployment_id);   // "old-deploy-uuid" | null
+console.log(result.message);                       // "Deployment activated successfully"
+```
+
+## deactivate
+
+Deactivates the currently live deployment so no deployment is active. The workflow can still be run with an explicit `workflowId` — this only affects deployments used by the live slot.
+
+<ParamField path="workflowId" type="string" required>
+  UUID of the parent workflow.
+</ParamField>
+
+```typescript
+const result = await client.deployments.deactivate('550e8400-e29b-41d4-a716-446655440000');
+
+console.log(result.success);                       // true
+console.log(result.previous_live_deployment_id);   // "deploy-uuid-that-was-live"
+console.log(result.message);                       // "Live deployment deactivated"
+```
+
+## delete
+
+Permanently deletes a deployment snapshot. If the deleted deployment was live, the next most recent deployment may be promoted (check `new_live_deployment_id`).
+
+<ParamField path="workflowId" type="string" required>
+  UUID of the parent workflow.
+</ParamField>
+
+<ParamField path="deploymentId" type="string" required>
+  UUID of the deployment to delete.
+</ParamField>
+
+```typescript
+const result = await client.deployments.delete(
+  '550e8400-e29b-41d4-a716-446655440000',
+  'deploy-uuid-here',
+);
+
+console.log(result.success);                  // true
+console.log(result.deleted_deployment_id);    // "deploy-uuid"
+console.log(result.was_live);                 // false
+console.log(result.new_live_deployment_id);   // "other-deploy-uuid" | null
+```

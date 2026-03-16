@@ -1,0 +1,257 @@
+---
+title: "Composer"
+description: "AI-powered workflow builder assistant. Use natural language to create and modify workflows, then save or revert the changes."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## chat
+
+Sends a natural language message to the Composer AI to create or modify a workflow. Starting a new session requires a `workflowId`; continuing an existing session requires a `composerChatId`.
+
+<ParamField path="params.workflowId" type="string" optional>
+  UUID of the workflow to build or modify. Required for new sessions.
+</ParamField>
+
+<ParamField path="params.composerChatId" type="string" optional>
+  UUID of an existing Composer session to continue.
+</ParamField>
+
+<ParamField path="params.message" type="string" required>
+  Natural language instruction to the Composer AI.
+</ParamField>
+
+<ParamField path="params.llm" type="object" optional>
+  Override the LLM used by the Composer. Defaults to the organization's configured default.
+</ParamField>
+
+```typescript
+// Start a new composer session
+const session = await client.composer.chat({
+  workflowId: '550e8400-e29b-41d4-a716-446655440000',
+  message: 'Add a Tavily web search node before the LLM node, and wire the search results into the LLM context.',
+  llm: {
+    integration_name: 'anthropic',
+    provider_id: 'anthropic',
+    model_id: 'claude-sonnet-4-20250514',
+  },
+});
+
+console.log(session.composer_chat_id);  // "comp-uuid" — save for follow-up messages
+console.log(session.workflow_id);       // "550e8400-..."
+console.log(session.run_id);            // "run-uuid"
+console.log(session.thread_id);         // "thread-uuid"
+console.log(session.stream_url);        // "/composer/chat/{id}/listen/{run_id}"
+
+// Continue the same session with a follow-up
+const followUp = await client.composer.chat({
+  composerChatId: session.composer_chat_id,
+  message: 'Also add error handling — if the search fails, fall back to answering from memory.',
+});
+```
+
+## get
+
+Returns the full state of a Composer session, including all messages, the latest workflow snapshot, and any pending unsaved changes.
+
+<ParamField path="composerChatId" type="string" required>
+  UUID of the Composer session.
+</ParamField>
+
+```typescript
+const chatState = await client.composer.get('comp-uuid-here');
+
+console.log(chatState.composer_chat_id);      // "comp-uuid"
+console.log(chatState.workflow_id);           // "workflow-uuid"
+console.log(chatState.has_pending_changes);   // true
+console.log(chatState.messages.length);       // 6
+
+for (const msg of chatState.messages) {
+  console.log(`[${msg.role}] ${msg.content?.slice(0, 80)}`);
+}
+```
+
+## listen
+
+Streams real-time SSE events from the Composer AI as it analyzes and modifies the workflow. Use `for await...of` to process events.
+
+<ParamField path="composerChatId" type="string" required>
+  UUID of the Composer session.
+</ParamField>
+
+<ParamField path="runId" type="string" required>
+  Run ID returned by the `chat` call.
+</ParamField>
+
+```typescript
+const session = await client.composer.chat({
+  workflowId: '550e8400-e29b-41d4-a716-446655440000',
+  message: 'Convert the linear workflow into a parallel fan-out pattern with three agent branches.',
+});
+
+for await (const event of client.composer.listen(session.composer_chat_id, session.run_id)) {
+  switch (event.type) {
+    case 'metadata':
+      console.log(`Composer session started — workflow: ${event.data.workflow_id}`);
+      break;
+
+    case 'tool_call':
+      console.log(`Agent calling tool: ${event.data.tool_name}`);
+      console.log(`  Args: ${JSON.stringify(event.data.arguments)}`);
+      break;
+
+    case 'tool_result':
+      console.log(`Tool result received for: ${event.data.tool_name}`);
+      break;
+
+    case 'workflow_change':
+      console.log('Workflow schema updated:');
+      console.log(`  Added nodes: ${event.data.added_nodes?.join(', ') ?? 'none'}`);
+      console.log(`  Modified nodes: ${event.data.modified_nodes?.join(', ') ?? 'none'}`);
+      console.log(`  Removed nodes: ${event.data.removed_nodes?.join(', ') ?? 'none'}`);
+      break;
+
+    case 'response_chunk':
+      // Stream the AI's explanation to the user
+      process.stdout.write(event.data.chunk);
+      break;
+
+    case 'subagent_start':
+      console.log(`Sub-agent spawned: ${event.data.agent_name}`);
+      break;
+
+    case 'interrupt':
+      console.log(`Composer needs input: ${event.data.message}`);
+      break;
+
+    case 'done':
+      console.log('\nComposer finished.');
+      console.log(`Has pending changes: ${event.data.has_pending_changes}`);
+      break;
+
+    case 'error':
+      console.error(`Composer error: ${event.data.error_message}`);
+      break;
+  }
+}
+```
+
+## save
+
+Applies all pending Composer changes to the live workflow definition. After saving, `has_pending_changes` becomes `false`.
+
+<ParamField path="composerChatId" type="string" required>
+  UUID of the Composer session with pending changes.
+</ParamField>
+
+```typescript
+const result = await client.composer.save('comp-uuid-here');
+
+console.log(result.success);          // true
+console.log(result.workflow_id);      // "workflow-uuid"
+console.log(result.message);          // "Changes saved successfully"
+```
+
+## revert
+
+Discards all pending Composer changes, restoring the workflow to its last saved state.
+
+<ParamField path="composerChatId" type="string" required>
+  UUID of the Composer session.
+</ParamField>
+
+```typescript
+const result = await client.composer.revert('comp-uuid-here');
+
+console.log(result.success);   // true
+console.log(result.message);   // "Changes reverted successfully"
+```
+
+## history
+
+Returns past Composer sessions for a workflow, ordered by creation date descending.
+
+<ParamField path="workflowId" type="string" required>
+  UUID of the workflow.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Max sessions to return. Range: 1–50. Default: 10.
+</ParamField>
+
+```typescript
+const sessions = await client.composer.history('workflow-uuid-here', { limit: 5 });
+
+for (const session of sessions) {
+  console.log(`Session ${session.composer_chat_id} — ${session.message_count} messages — ${session.created_at}`);
+  console.log(`  Last message: ${session.last_message?.slice(0, 80)}`);
+}
+```
+
+## delete
+
+Deletes a Composer session and its message history.
+
+<ParamField path="composerChatId" type="string" required>
+  UUID of the Composer session.
+</ParamField>
+
+<ParamField path="params.permanent" type="boolean" optional>
+  Permanently delete rather than soft-delete. Default: `false`.
+</ParamField>
+
+```typescript
+await client.composer.delete('comp-uuid-here');
+
+// Permanent deletion (cannot be recovered)
+await client.composer.delete('comp-uuid-here', { permanent: true });
+```
+
+## status
+
+Returns the current execution status of a Composer session without opening the SSE stream.
+
+<ParamField path="composerChatId" type="string" required>
+  UUID of the Composer session.
+</ParamField>
+
+```typescript
+const status = await client.composer.status('comp-uuid-here');
+
+console.log(status.composer_chat_id);      // "comp-uuid"
+console.log(status.workflow_id);           // "workflow-uuid"
+console.log(status.is_running);            // false
+console.log(status.running_id);            // null (no active run)
+console.log(status.has_pending_changes);   // true
+console.log(status.run_status);            // "completed"
+```
+
+## cancel
+
+Cancels the currently active Composer AI run for a session.
+
+<ParamField path="composerChatId" type="string" required>
+  UUID of the Composer session.
+</ParamField>
+
+```typescript
+const result = await client.composer.cancel('comp-uuid-here');
+
+console.log(result.success);  // true
+console.log(result.message);  // "Composer run cancelled"
+```

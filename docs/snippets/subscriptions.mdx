@@ -1,0 +1,115 @@
+---
+title: "Subscriptions"
+description: "Retrieve organization subscription plans, billing details, and generate Stripe checkout and customer portal URLs."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## organizationPlans
+
+Returns all available subscription plans for the organization. Plans with `is_selectable: true` are upgradeable from the current subscription tier.
+
+```typescript
+const { plans, total } = await client.subscriptions.organizationPlans();
+
+console.log(`${total} plans available`);
+
+for (const plan of plans) {
+  console.log(`\n${plan.name} (sort_order: ${plan.sort_order})`);
+  console.log(`  Enterprise: ${plan.is_enterprise}`);
+  console.log(`  Selectable: ${plan.is_selectable}`);
+
+  for (const price of plan.prices) {
+    const period = price.interval === 'year' ? '/yr' : '/mo';
+    console.log(`  ${price.currency.toUpperCase()} ${price.price}${period}`);
+  }
+
+  console.log(`  Features:`);
+  for (const feature of plan.features) {
+    console.log(`    - ${feature}`);
+  }
+}
+```
+
+## billing
+
+Returns the organization's current subscription and plan details.
+
+```typescript
+const billing = await client.subscriptions.billing();
+
+if (!billing.has_subscription) {
+  console.log('No active subscription — on free tier.');
+} else {
+  const sub = billing.subscription;
+  const plan = billing.plan;
+
+  console.log(`Plan: ${plan.name}`);
+  console.log(`Status: ${sub.status}`);           // "active" | "past_due" | "canceled"
+  console.log(`Interval: ${sub.billing_interval}`); // "month" | "year"
+  console.log(`Price: $${sub.current_price}`);
+  console.log(`Period: ${sub.current_period_start} → ${sub.current_period_end}`);
+
+  // Check if renewal is approaching
+  const periodEnd = new Date(sub.current_period_end);
+  const daysLeft = Math.ceil((periodEnd.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+  console.log(`Renews in: ${daysLeft} days`);
+}
+```
+
+## checkoutLink
+
+Generates a Stripe-hosted checkout URL for upgrading or purchasing a plan. Redirect the user to this URL to complete payment.
+
+<ParamField query="planId" type="string" required>
+  The plan ID to purchase. Obtain from `organizationPlans`.
+</ParamField>
+
+<ParamField query="interval" type="string" required>
+  Billing interval: `"month"` or `"year"`.
+</ParamField>
+
+```typescript
+// First, fetch available plans
+const { plans } = await client.subscriptions.organizationPlans();
+const proPlan = plans.find((p) => p.name === 'Pro' && p.is_selectable);
+
+if (!proPlan) {
+  console.log('Pro plan not available for upgrade from current tier.');
+} else {
+  // Generate a checkout link for annual billing
+  const { url } = await client.subscriptions.checkoutLink({
+    planId: proPlan.id,
+    interval: 'year',
+  });
+
+  console.log(`Redirect user to: ${url}`);
+  // url: "https://checkout.stripe.com/c/pay/cs_live_..."
+}
+```
+
+## customerPortal
+
+Generates a Stripe-hosted billing portal URL where organization admins can manage their subscription, update payment methods, and download invoices.
+
+```typescript
+const { url } = await client.subscriptions.customerPortal();
+
+console.log(`Redirect user to: ${url}`);
+// url: "https://billing.stripe.com/p/session/..."
+```

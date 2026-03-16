@@ -1,0 +1,178 @@
+---
+title: "Organizations"
+description: "Create organizations, manage LLM availability, invite and manage members, and control user roles."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## create
+
+Creates a new organization. The authenticated user automatically becomes the owner.
+
+<ParamField path="params.name" type="string" required>
+  Organization display name. 2–40 characters.
+</ParamField>
+
+<ParamField path="params.slug" type="string" optional>
+  URL-safe identifier. Pattern: `^[a-z0-9]+(-[a-z0-9]+)*$`. 2–50 characters. Auto-generated from name if omitted.
+</ParamField>
+
+```typescript
+const result = await client.organizations.create({
+  name: 'Acme Engineering',
+  slug: 'acme-engineering',
+});
+
+console.log(result.success);               // true
+console.log(result.organization.id);       // "org-uuid"
+console.log(result.organization.name);     // "Acme Engineering"
+console.log(result.organization.slug);     // "acme-engineering"
+console.log(result.message);              // "Organization created successfully"
+```
+
+## llms
+
+Returns the LLM providers available to the organization — both active (credentials configured) and inactive (catalog entries without credentials). Results are Redis-cached.
+
+```typescript
+const result = await client.organizations.llms();
+
+console.log(result.total);              // 15
+console.log(result.active_llm_total);   // 8
+console.log(result.inactive_llm_total); // 7
+
+console.log('Active LLMs:');
+for (const llm of result.active_llms) {
+  console.log(`  ${llm.provider_id} / ${llm.model_id}`);
+}
+
+console.log('Inactive LLMs (no credentials):');
+for (const llm of result.inactive_llms) {
+  console.log(`  ${llm.provider_id} / ${llm.model_id}`);
+}
+```
+
+## invite
+
+Invites a user to join the organization by email. Enforces the subscription's seat limit.
+
+<ParamField path="params.invitedEmail" type="string" required>
+  Email address of the person to invite.
+</ParamField>
+
+<ParamField path="params.role" type="string" optional>
+  Role to assign on acceptance: `"member"` or `"admin"`. Default: `"member"`.
+</ParamField>
+
+<ParamField path="params.invitationMessage" type="string" optional>
+  Optional personal message included in the invitation email.
+</ParamField>
+
+```typescript
+const result = await client.organizations.invite({
+  invitedEmail: 'bob@example.com',
+  role: 'member',
+  invitationMessage: 'Hi Bob, joining us for the Q2 launch project!',
+});
+
+console.log(result.success);          // true
+console.log(result.invitation_id);    // "invite-uuid"
+console.log(result.message);          // "Invitation sent to bob@example.com"
+```
+
+## cancelInvitation
+
+Cancels a pending invitation before it is accepted.
+
+<ParamField path="invitationId" type="string" required>
+  UUID of the invitation to cancel.
+</ParamField>
+
+```typescript
+const result = await client.organizations.cancelInvitation('invite-uuid-here');
+
+console.log(result.success);   // true
+console.log(result.message);   // "Invitation cancelled"
+```
+
+## reinvite
+
+Re-sends the invitation email for an existing pending invitation. Useful when the original email was missed.
+
+<ParamField path="invitationId" type="string" required>
+  UUID of the pending invitation to resend.
+</ParamField>
+
+```typescript
+const result = await client.organizations.reinvite('invite-uuid-here');
+
+console.log(result.success);   // true
+console.log(result.message);   // "Invitation resent to bob@example.com"
+```
+
+## updateRole
+
+Changes a member's role within the organization. Owners cannot have their role changed via this endpoint. Admins can only promote/demote between `"member"` and `"admin"`.
+
+<ParamField path="organizationId" type="string" required>
+  UUID of the organization.
+</ParamField>
+
+<ParamField path="userId" type="string" required>
+  UUID of the member whose role is being changed.
+</ParamField>
+
+<ParamField path="params.role" type="string" required>
+  New role: `"member"` or `"admin"`.
+</ParamField>
+
+```typescript
+const result = await client.organizations.updateRole(
+  'org-uuid-here',
+  'user-uuid-here',
+  { role: 'admin' },
+);
+
+console.log(result.success);          // true
+console.log(result.user_id);          // "user-uuid"
+console.log(result.organization_id);  // "org-uuid"
+console.log(result.new_role);         // "admin"
+console.log(result.message);          // "Role updated to admin"
+```
+
+## removeUser
+
+Removes a user from the organization. Requires owner role. The removed user loses access to all organization resources immediately.
+
+<ParamField path="organizationId" type="string" required>
+  UUID of the organization.
+</ParamField>
+
+<ParamField path="userId" type="string" required>
+  UUID of the user to remove.
+</ParamField>
+
+```typescript
+const result = await client.organizations.removeUser(
+  'org-uuid-here',
+  'user-uuid-here',
+);
+
+console.log(result.success);  // true
+console.log(result.message);  // "User removed from organization"
+```

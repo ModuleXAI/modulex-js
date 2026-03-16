@@ -1,0 +1,298 @@
+---
+title: "Schedules"
+description: "Automate workflow execution with interval-based or cron-based schedules. Monitor run history and retry failed executions."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## create
+
+Creates a new schedule to automatically execute a workflow at a defined cadence. Schedules activate immediately on creation.
+
+<ParamField path="params.workflowId" type="string" required>
+  UUID of the workflow to execute on schedule.
+</ParamField>
+
+<ParamField path="params.name" type="string" required>
+  Human-readable label for the schedule. 1–255 characters.
+</ParamField>
+
+<ParamField path="params.scheduleType" type="string" required>
+  Trigger type: `"interval"` for fixed intervals or `"cron"` for cron expressions.
+</ParamField>
+
+<ParamField path="params.intervalSeconds" type="number" optional>
+  Seconds between executions. Required when `scheduleType` is `"interval"`. Minimum: 60.
+</ParamField>
+
+<ParamField path="params.cronExpression" type="string" optional>
+  Cron expression. Required when `scheduleType` is `"cron"`. Max 100 characters.
+</ParamField>
+
+<ParamField path="params.timezone" type="string" optional>
+  IANA timezone identifier for cron interpretation. Default: `"UTC"`.
+</ParamField>
+
+<ParamField path="params.input" type="object" optional>
+  Static input passed to the workflow on each scheduled run.
+</ParamField>
+
+```typescript
+// Interval-based: run every hour
+const hourlySchedule = await client.schedules.create({
+  workflowId: '550e8400-e29b-41d4-a716-446655440000',
+  name: 'Hourly Data Sync',
+  scheduleType: 'interval',
+  intervalSeconds: 3600,
+  input: { source: 'crm', destination: 'data_warehouse' },
+});
+
+console.log(hourlySchedule.id);          // "sched-uuid"
+console.log(hourlySchedule.is_active);   // true
+console.log(hourlySchedule.next_run_at); // "2026-03-09T15:00:00Z"
+
+// Cron-based: run at 9am on weekdays in Istanbul
+const weekdaySchedule = await client.schedules.create({
+  workflowId: '550e8400-e29b-41d4-a716-446655440000',
+  name: 'Weekday Morning Report',
+  description: 'Generates and sends the daily business digest',
+  scheduleType: 'cron',
+  cronExpression: '0 9 * * 1-5',
+  timezone: 'Europe/Istanbul',
+  input: { report_type: 'daily_digest', recipients: ['team@example.com'] },
+});
+
+console.log(weekdaySchedule.cron_expression);  // "0 9 * * 1-5"
+console.log(weekdaySchedule.timezone);         // "Europe/Istanbul"
+```
+
+## list
+
+Returns schedules for the organization with optional filtering.
+
+<ParamField path="params.workflowId" type="string" optional>
+  Filter schedules belonging to a specific workflow.
+</ParamField>
+
+<ParamField path="params.isActive" type="boolean" optional>
+  Filter by active (`true`) or paused (`false`) state.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Max results. Range: 1–100. Default: 50.
+</ParamField>
+
+<ParamField path="params.offset" type="number" optional>
+  Pagination offset. Default: 0.
+</ParamField>
+
+```typescript
+// All active schedules
+const active = await client.schedules.list({ isActive: true });
+
+// All schedules for a specific workflow
+const workflowSchedules = await client.schedules.list({
+  workflowId: '550e8400-e29b-41d4-a716-446655440000',
+});
+
+for (const sched of workflowSchedules) {
+  const type = sched.schedule_type === 'cron'
+    ? sched.cron_expression
+    : `every ${sched.interval_seconds}s`;
+  console.log(`${sched.name} — ${type} — active: ${sched.is_active}`);
+}
+```
+
+## get
+
+Returns full details for a single schedule.
+
+<ParamField path="scheduleId" type="string" required>
+  UUID of the schedule.
+</ParamField>
+
+```typescript
+const schedule = await client.schedules.get('sched-uuid-here');
+
+console.log(schedule.name);              // "Hourly Data Sync"
+console.log(schedule.schedule_type);     // "interval"
+console.log(schedule.interval_seconds);  // 3600
+console.log(schedule.next_run_at);       // "2026-03-09T16:00:00Z"
+console.log(schedule.last_run_at);       // "2026-03-09T15:00:00Z"
+console.log(schedule.is_active);         // true
+```
+
+## update
+
+Updates a schedule's configuration. Only provided fields are changed.
+
+<ParamField path="scheduleId" type="string" required>
+  UUID of the schedule to update.
+</ParamField>
+
+```typescript
+const updated = await client.schedules.update('sched-uuid-here', {
+  name: 'Bi-Hourly Data Sync',
+  intervalSeconds: 7200,
+  input: { source: 'crm', destination: 'data_warehouse', mode: 'incremental' },
+});
+
+console.log(updated.interval_seconds);  // 7200
+console.log(updated.next_run_at);       // Recalculated based on new interval
+```
+
+## delete
+
+Permanently deletes a schedule.
+
+<ParamField path="scheduleId" type="string" required>
+  UUID of the schedule to delete.
+</ParamField>
+
+```typescript
+await client.schedules.delete('sched-uuid-here');
+console.log('Schedule deleted.');
+```
+
+## pause
+
+Pauses a schedule, preventing future executions. The schedule definition is preserved and can be resumed later.
+
+<ParamField path="scheduleId" type="string" required>
+  UUID of the schedule to pause.
+</ParamField>
+
+```typescript
+const result = await client.schedules.pause('sched-uuid-here');
+console.log(result.is_active);  // false
+console.log(result.message);    // "Schedule paused successfully"
+```
+
+## resume
+
+Resumes a paused schedule, re-enabling future executions.
+
+<ParamField path="scheduleId" type="string" required>
+  UUID of the schedule to resume.
+</ParamField>
+
+```typescript
+const result = await client.schedules.resume('sched-uuid-here');
+console.log(result.is_active);    // true
+console.log(result.next_run_at);  // Next scheduled execution time
+```
+
+## runs
+
+Returns a paginated history of execution runs for a schedule.
+
+<ParamField path="scheduleId" type="string" required>
+  UUID of the schedule.
+</ParamField>
+
+<ParamField path="params.status" type="string" optional>
+  Filter by run status: `"success"`, `"failed"`, `"running"`.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Max runs. Range: 1–100. Default: 50.
+</ParamField>
+
+<ParamField path="params.offset" type="number" optional>
+  Pagination offset. Default: 0.
+</ParamField>
+
+```typescript
+const runs = await client.schedules.runs('sched-uuid-here', {
+  status: 'failed',
+  limit: 20,
+});
+
+for (const run of runs) {
+  console.log(`Run ${run.id}: ${run.status} — started ${run.started_at}`);
+  if (run.error_message) {
+    console.error(`  Error: ${run.error_message}`);
+  }
+}
+```
+
+## runStats
+
+Returns aggregated statistics about a schedule's execution history.
+
+<ParamField path="scheduleId" type="string" required>
+  UUID of the schedule.
+</ParamField>
+
+<ParamField path="params.days" type="number" optional>
+  Number of past days to include in statistics. Range: 1–90. Default: 7.
+</ParamField>
+
+```typescript
+const stats = await client.schedules.runStats('sched-uuid-here', { days: 30 });
+
+console.log(stats.total_runs);             // 720
+console.log(stats.successful_runs);        // 715
+console.log(stats.failed_runs);            // 5
+console.log(stats.average_duration_ms);    // 2500
+
+const successRate = (stats.successful_runs / stats.total_runs * 100).toFixed(1);
+console.log(`Success rate: ${successRate}%`); // "99.3%"
+```
+
+## getRun
+
+Returns details for a specific schedule execution run.
+
+<ParamField path="scheduleId" type="string" required>
+  UUID of the schedule.
+</ParamField>
+
+<ParamField path="runId" type="string" required>
+  UUID of the run.
+</ParamField>
+
+```typescript
+const run = await client.schedules.getRun('sched-uuid-here', 'run-uuid-here');
+
+console.log(run.id);              // "run-uuid"
+console.log(run.status);          // "success" | "failed" | "running"
+console.log(run.started_at);      // "2026-03-09T09:00:00Z"
+console.log(run.completed_at);    // "2026-03-09T09:00:03Z"
+console.log(run.duration_ms);     // 2840
+console.log(run.workflow_run_id); // UUID linking to the workflow execution
+```
+
+## retryRun
+
+Re-executes a specific failed run with the same input and configuration.
+
+<ParamField path="scheduleId" type="string" required>
+  UUID of the schedule.
+</ParamField>
+
+<ParamField path="runId" type="string" required>
+  UUID of the failed run to retry.
+</ParamField>
+
+```typescript
+const retried = await client.schedules.retryRun('sched-uuid-here', 'run-uuid-here');
+
+console.log(retried.id);      // New run UUID
+console.log(retried.status);  // "running"
+```

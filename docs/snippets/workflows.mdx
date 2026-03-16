@@ -1,0 +1,282 @@
+---
+title: "Workflows"
+description: "Create, list, retrieve, update, delete, and inspect workflows. Includes auto-pagination and workflow builder details."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## create
+
+Creates a new workflow in the organization. Requires admin or owner role.
+
+<ParamField path="params.workflowSchema" type="object" required>
+  The `WorkflowDefinition` object containing nodes, edges, state schema, config, and metadata.
+</ParamField>
+
+<ParamField path="params.name" type="string" optional>
+  Workflow display name. Extracted from `workflowSchema.metadata.name` when omitted.
+</ParamField>
+
+<ParamField path="params.description" type="string" optional>
+  Human-readable description of the workflow's purpose.
+</ParamField>
+
+<ParamField path="params.status" type="string" optional>
+  Initial status. Default: `"draft"`.
+</ParamField>
+
+<ParamField path="params.tags" type="string[]" optional>
+  Tags for filtering and discovery.
+</ParamField>
+
+```typescript
+const workflow = await client.workflows.create({
+  name: 'Customer Support Agent',
+  description: 'Handles tier-1 support tickets using GPT-4o',
+  status: 'draft',
+  tags: ['support', 'agent'],
+  workflowSchema: {
+    metadata: {
+      name: 'Customer Support Agent',
+      description: 'Handles tier-1 support tickets',
+      version: '1.0.0',
+      author: 'Alice',
+      tags: ['support'],
+    },
+    config: {
+      default_llm: {
+        integration_name: 'openai',
+        provider_id: 'openai',
+        model_id: 'gpt-4o',
+        temperature: 0.4,
+      },
+      recursion_limit: 25,
+      checkpointing: 'postgres',
+    },
+    state_schema: {
+      fields: {
+        messages: { type: 'messages', description: 'Conversation', reducer: 'add', required: true, default: null },
+      },
+    },
+    nodes: [
+      {
+        id: 'support_agent',
+        type: 'agent',
+        name: 'Support Agent',
+        enabled: true,
+        agent_config: {
+          llm: { integration_name: 'openai', provider_id: 'openai', model_id: 'gpt-4o', temperature: 0.4 },
+          system_prompt: 'You are a helpful customer support agent.',
+          user_prompt: '{{input.messages}}',
+          max_iterations: 10,
+        },
+      },
+    ],
+    edges: [],
+    entry_point: 'support_agent',
+  },
+});
+
+console.log(workflow.id);      // "550e8400-e29b-41d4-a716-446655440000"
+console.log(workflow.status);  // "draft"
+```
+
+## list
+
+Lists workflows in the organization with optional filtering and pagination. The `workflow_schema` field is NOT included in list results — use `get` to retrieve it.
+
+<ParamField path="params.status" type="string" optional>
+  Filter by status: `"draft"`, `"active"`, `"archived"`.
+</ParamField>
+
+<ParamField path="params.category" type="string" optional>
+  Filter by workflow category.
+</ParamField>
+
+<ParamField path="params.visibility" type="string" optional>
+  Filter by visibility: `"private"`, `"public"`.
+</ParamField>
+
+<ParamField path="params.search" type="string" optional>
+  Full-text search across workflow name and description.
+</ParamField>
+
+<ParamField path="params.page" type="number" optional>
+  Page number (1-indexed). Default: 1.
+</ParamField>
+
+<ParamField path="params.pageSize" type="number" optional>
+  Items per page. Range: 1–100. Default: 20.
+</ParamField>
+
+```typescript
+const result = await client.workflows.list({
+  status: 'active',
+  search: 'support',
+  page: 1,
+  pageSize: 20,
+});
+
+console.log(result.total);        // 42
+console.log(result.total_pages);  // 3
+for (const wf of result.workflows) {
+  console.log(`${wf.name} (${wf.status}) — v${wf.version}`);
+}
+```
+
+## listAll
+
+Auto-paginating async generator. Yields every `WorkflowSummary` across all pages without manually tracking page numbers.
+
+<ParamField path="params.status" type="string" optional>
+  Same filters as `list`, except `page` and `pageSize` are not accepted.
+</ParamField>
+
+```typescript
+// Collect all active workflows without manual pagination
+const allWorkflows: WorkflowSummary[] = [];
+
+for await (const workflow of client.workflows.listAll({ status: 'active' })) {
+  allWorkflows.push(workflow);
+  console.log(`Loaded: ${workflow.name}`);
+}
+
+console.log(`Total loaded: ${allWorkflows.length}`);
+```
+
+## get
+
+Returns the full workflow object, including `workflow_schema`, `edit_version`, `last_edited_by`, and `last_edited_at`.
+
+<ParamField path="workflowId" type="string" required>
+  UUID of the workflow to retrieve.
+</ParamField>
+
+```typescript
+import { Modulex, NotFoundError, RateLimitError } from 'modulex';
+
+try {
+  const workflow = await client.workflows.get('550e8400-e29b-41d4-a716-446655440000');
+
+  console.log(workflow.name);            // "Customer Support Agent"
+  console.log(workflow.edit_version);    // 3
+  console.log(workflow.last_edited_by);  // "uuid-of-editor"
+  console.log(workflow.workflow_schema); // Full WorkflowDefinition object
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.log('Workflow not found.');
+  } else if (error instanceof RateLimitError) {
+    console.log(`Rate limited. Retry after ${error.retryAfter}s`);
+  } else {
+    throw error;
+  }
+}
+```
+
+## update
+
+Updates an existing workflow. Only the fields you provide are changed. Publishing a schema change emits a Redis change event.
+
+<ParamField path="workflowId" type="string" required>
+  UUID of the workflow to update.
+</ParamField>
+
+<ParamField path="params.name" type="string" optional>
+  New display name.
+</ParamField>
+
+<ParamField path="params.status" type="string" optional>
+  New status: `"draft"`, `"active"`, `"archived"`.
+</ParamField>
+
+<ParamField path="params.workflowSchema" type="object" optional>
+  Replacement `WorkflowDefinition`. Triggers a Redis change event on save.
+</ParamField>
+
+```typescript
+const updated = await client.workflows.update('550e8400-e29b-41d4-a716-446655440000', {
+  name: 'Customer Support Agent v2',
+  status: 'active',
+  tags: ['support', 'agent', 'production'],
+  description: 'Updated to use GPT-4o with improved prompting',
+});
+
+console.log(updated.name);         // "Customer Support Agent v2"
+console.log(updated.status);       // "active"
+console.log(updated.edit_version); // 4
+```
+
+## delete
+
+Soft-deletes a workflow. The workflow is marked with a `deleted_at` timestamp but not permanently removed.
+
+<ParamField path="workflowId" type="string" required>
+  UUID of the workflow to delete.
+</ParamField>
+
+```typescript
+import { Modulex, NotFoundError } from 'modulex';
+
+try {
+  const result = await client.workflows.delete('550e8400-e29b-41d4-a716-446655440000');
+
+  console.log(result.status);       // "deleted"
+  console.log(result.workflow_id);  // "550e8400-..."
+  console.log(result.message);      // "Workflow deleted successfully"
+} catch (error) {
+  if (error instanceof NotFoundError) {
+    console.error('Workflow not found.');
+  } else {
+    throw error;
+  }
+}
+```
+
+## builderDetails
+
+Returns available node types, integration categories, and counts for the visual workflow builder. Results are cached server-side for 60 minutes.
+
+<ParamField path="params.nodeType" type="string" optional>
+  Filter node types. Values: `"llm"`, `"agent"`, `"tool"`, `"function"`, `"transformer"`, `"interrupt"`, `"conditional"`.
+</ParamField>
+
+<ParamField path="params.category" type="string" optional>
+  Filter by integration category.
+</ParamField>
+
+<ParamField path="params.integrationName" type="string" optional>
+  Filter tools belonging to a specific integration (e.g., `"tavily"`, `"github"`).
+</ParamField>
+
+```typescript
+// Get all builder details
+const details = await client.workflows.builderDetails();
+console.log(details.node_types);  // All available node type definitions
+console.log(details.categories);  // Category breakdown
+console.log(details.counts);      // Counts per node type and category
+console.log(details.cached);      // true (served from cache)
+
+// Filter to only LLM node types
+const llmDetails = await client.workflows.builderDetails({ nodeType: 'llm' });
+
+// Filter tools from a specific integration
+const tavilyTools = await client.workflows.builderDetails({
+  nodeType: 'tool',
+  integrationName: 'tavily',
+});
+```

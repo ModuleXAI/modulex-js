@@ -1,0 +1,100 @@
+---
+title: "System"
+description: "Public health checks, Prometheus metrics, and timezone utilities. No authentication required."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+// System endpoints are public — no API key required
+const client = new Modulex({
+  apiKey: '',
+});
+```
+
+## health
+
+Returns the service health status. No authentication required. Useful for uptime monitoring and load balancer health checks.
+
+```typescript
+const health = await client.system.health();
+
+console.log(health.status);   // "healthy"
+console.log(health.service);  // "ModuleX"
+console.log(health.version);  // "0.1.2"
+
+if (health.status !== 'healthy') {
+  console.error('Service is degraded — alert on-call engineer.');
+}
+```
+
+## metrics
+
+Returns Prometheus-format metrics for scraping by monitoring infrastructure (Grafana, Prometheus, Datadog, etc.). No authentication required.
+
+```typescript
+const metrics = await client.system.metrics();
+
+// metrics is a plain string in Prometheus exposition format
+console.log(metrics);
+// Output example:
+// # HELP http_requests_total Total HTTP requests
+// # TYPE http_requests_total counter
+// http_requests_total{method="GET",status="200"} 14523
+// http_requests_total{method="POST",status="201"} 3201
+// ...
+```
+
+## timezones
+
+Returns the full timezone catalog organized into popular regions plus a complete flat list. No authentication required.
+
+```typescript
+const tz = await client.system.timezones();
+
+// Grouped popular timezones
+for (const group of tz.popular) {
+  console.log(`\n${group.region}:`);
+  for (const zone of group.timezones) {
+    console.log(`  ${zone.value} — ${zone.label} (${zone.offset})`);
+  }
+}
+
+// Full flat list of all IANA timezone identifiers
+console.log(`\nTotal timezones: ${tz.all_timezones.length}`);
+// ["Africa/Abidjan", "Africa/Accra", ..., "UTC", "America/New_York", ...]
+```
+
+## searchTimezones
+
+Searches for timezones matching a query string. Returns up to 20 matches. No authentication required.
+
+<ParamField query="q" type="string" required>
+  Search query. Minimum 2 characters. Matches against timezone name, region, and offset label.
+</ParamField>
+
+```typescript
+// Search by city name
+const istanbul = await client.system.searchTimezones({ q: 'Istanbul' });
+console.log(istanbul[0]);
+// { value: "Europe/Istanbul", label: "Istanbul (Turkey)", offset: "+03:00" }
+
+// Search by UTC offset
+const plus3 = await client.system.searchTimezones({ q: '+03' });
+for (const tz of plus3) {
+  console.log(`${tz.value} — ${tz.label} (${tz.offset})`);
+}
+
+// Search by region
+const eastern = await client.system.searchTimezones({ q: 'New_York' });
+console.log(eastern[0]);
+// { value: "America/New_York", label: "Eastern Time (US & Canada)", offset: "-05:00" }
+```

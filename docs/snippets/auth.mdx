@@ -1,0 +1,128 @@
+---
+title: "Auth"
+description: "User identity, organization membership, and invitation management endpoints."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## me
+
+Returns the authenticated user's profile. No organization header required.
+
+```typescript
+const user = await client.auth.me();
+
+console.log(user.id);           // "550e8400-e29b-41d4-a716-446655440000"
+console.log(user.email);        // "alice@example.com"
+console.log(user.username);     // "alice"
+console.log(user.role);         // "USER" | "ADMIN" | "SUPER_ADMIN"
+console.log(user.is_active);    // true
+console.log(user.organization_ids);        // ["uuid-1", "uuid-2"]
+console.log(user.primary_organization_id); // "uuid-1"
+```
+
+## organizations
+
+Returns all organizations the authenticated user belongs to, optionally filtered by role.
+
+<ParamField path="params.role" type="string" optional>
+  Filter by membership role. Accepted values: `"member"`, `"admin"`, `"owner"`.
+</ParamField>
+
+```typescript
+// List all organizations
+const result = await client.auth.organizations();
+console.log(result.total);           // 3
+console.log(result.organizations);   // Array of org summaries
+
+// Filter to only organizations where the user is an admin or owner
+const adminOrgs = await client.auth.organizations({ role: 'admin' });
+for (const org of adminOrgs.organizations) {
+  console.log(`${org.name} (${org.role}) — joined ${org.created_at}`);
+}
+```
+
+## invitations
+
+Returns all pending organization invitations addressed to the authenticated user.
+
+```typescript
+const { invitations } = await client.auth.invitations();
+
+for (const invite of invitations) {
+  console.log(`Invited to: ${invite.organization_name}`);
+  console.log(`Invited by: ${invite.invited_by_email}`);
+  console.log(`Role offered: ${invite.role}`);
+}
+```
+
+## acceptInvitation
+
+Accepts a pending organization invitation. Only the invited user (email match) can accept. Enforces organization seat limits.
+
+<ParamField path="invitationId" type="string" required>
+  UUID of the invitation to accept.
+</ParamField>
+
+```typescript
+const invitationId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
+const result = await client.auth.acceptInvitation(invitationId);
+
+if (result.success) {
+  console.log('Successfully joined the organization.');
+}
+```
+
+## rejectInvitation
+
+Rejects a pending organization invitation.
+
+<ParamField path="invitationId" type="string" required>
+  UUID of the invitation to reject.
+</ParamField>
+
+```typescript
+const invitationId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+
+const result = await client.auth.rejectInvitation(invitationId);
+
+if (result.success) {
+  console.log('Invitation rejected.');
+}
+```
+
+## leaveOrganization
+
+Leaves the organization set in the client's `organizationId`. Owners cannot leave their own organization.
+
+```typescript
+// The client must be initialized with the org you want to leave
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'org-to-leave-uuid',
+});
+
+const result = await client.auth.leaveOrganization();
+
+console.log(result.left_organization.name);   // "Acme Corp"
+console.log(result.total_remaining);          // 1
+for (const org of result.remaining_organizations) {
+  console.log(`Still a member of: ${org.name}`);
+}
+```

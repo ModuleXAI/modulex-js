@@ -1,0 +1,171 @@
+---
+title: "Chats"
+description: "List, retrieve, stream, and manage chat sessions created by workflow executions."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## list
+
+Returns all chats for the organization grouped by folder. Private chats are only visible to their creator. Results are Redis-cached with a 5-minute TTL.
+
+```typescript
+const chats = await client.chats.list();
+
+// Chats are grouped by folder name
+console.log(chats.chats);     // Default (unfoldered) chats
+console.log(chats.pinned);    // Pinned chats
+console.log(chats.archived);  // Archived chats
+
+// Custom folders appear as dynamic keys
+for (const [folder, items] of Object.entries(chats)) {
+  console.log(`Folder "${folder}": ${items.length} chats`);
+}
+```
+
+## stream
+
+Opens a persistent SSE connection that delivers real-time chat list update notifications. Use `for await...of` to consume events.
+
+```typescript
+for await (const event of client.chats.stream()) {
+  switch (event.type) {
+    case 'connected':
+      console.log('Chat list stream connected.');
+      break;
+
+    case 'chat_list_updated':
+      console.log(`Chat list changed — type: ${event.data.type}`); // "public" | "private"
+      console.log(`Updated at: ${event.data.timestamp}`);
+      // Refetch the chat list to reflect the change
+      const updated = await client.chats.list();
+      console.log(`New chat count: ${updated.chats.length}`);
+      break;
+
+    case 'keepalive':
+      // Server sends keepalive every 30 seconds — no action needed
+      break;
+  }
+}
+```
+
+## get
+
+Returns a single chat by ID with its full message history and metadata.
+
+<ParamField path="chatId" type="string" required>
+  UUID of the chat to retrieve.
+</ParamField>
+
+```typescript
+const chat = await client.chats.get('chat-uuid-here');
+
+console.log(chat.id);           // "chat-uuid"
+console.log(chat.title);        // "Support Session — Order #12345"
+console.log(chat.is_private);   // false
+console.log(chat.creator_id);   // "user-uuid"
+console.log(chat.running_id);   // "run-uuid" | null (null when idle)
+console.log(chat.messages);     // Array of ChatMessage objects
+```
+
+## messages
+
+Retrieves paginated messages for a chat, ordered by creation time ascending.
+
+<ParamField path="chatId" type="string" required>
+  UUID of the chat.
+</ParamField>
+
+<ParamField path="params.limit" type="number" optional>
+  Max messages to return. Range: 1–1000. Default: 20.
+</ParamField>
+
+<ParamField path="params.offset" type="number" optional>
+  Number of messages to skip. Default: 0.
+</ParamField>
+
+```typescript
+const result = await client.chats.messages('chat-uuid-here', {
+  limit: 50,
+  offset: 0,
+});
+
+console.log(result.total);       // 128
+console.log(result.has_next);    // true
+console.log(result.actual_count); // 50
+
+for (const msg of result.messages) {
+  console.log(`[${msg.role}] ${msg.content}`);
+  if (msg.run_id) {
+    console.log(`  Run: ${msg.run_id} — status: ${msg.running_status}`);
+  }
+}
+```
+
+## update
+
+Updates a chat's metadata. Title and privacy changes are restricted to the creator for private chats. Any organization member can change their own folder assignment.
+
+<ParamField path="chatId" type="string" required>
+  UUID of the chat to update.
+</ParamField>
+
+<ParamField path="params.title" type="string" optional>
+  New chat title.
+</ParamField>
+
+<ParamField path="params.isPrivate" type="boolean" optional>
+  Change privacy setting. Only the creator can modify this.
+</ParamField>
+
+<ParamField path="params.folder" type="string" optional>
+  Move chat to a folder. Use `"pinned"`, `"archived"`, or any custom folder name.
+</ParamField>
+
+```typescript
+// Rename and pin a chat
+await client.chats.update('chat-uuid-here', {
+  title: 'Q4 Analysis — Approved',
+  folder: 'pinned',
+});
+
+// Archive a chat
+await client.chats.update('chat-uuid-here', {
+  folder: 'archived',
+});
+
+// Move to a custom project folder
+await client.chats.update('chat-uuid-here', {
+  folder: 'project-alpha',
+});
+```
+
+## delete
+
+Soft-deletes a chat by setting its `deleted_at` timestamp. Private chats can only be deleted by the creator; public chats by any organization member.
+
+<ParamField path="chatId" type="string" required>
+  UUID of the chat to delete.
+</ParamField>
+
+```typescript
+const result = await client.chats.delete('chat-uuid-here');
+
+console.log(result.success);  // true
+console.log(result.message);  // "Chat deleted successfully"
+```

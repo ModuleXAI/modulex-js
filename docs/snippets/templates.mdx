@@ -1,0 +1,226 @@
+---
+title: "Templates"
+description: "Browse, like, and use community and organization workflow templates. Create and manage templates and creator profiles."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## list
+
+Returns all publicly available templates. Results are Redis-cached with a 10-minute TTL and sorted by usage count descending.
+
+```typescript
+const { templates, cached } = await client.templates.list();
+
+console.log(`Loaded ${templates.length} templates (cached: ${cached})`);
+
+for (const template of templates) {
+  console.log(`${template.name} — ${template.used_count} uses — ${template.like_count} likes`);
+  console.log(`  Tags: ${template.tags.join(', ')}`);
+}
+```
+
+## get
+
+Returns full details for a template, including the workflow schema, creator info, and social proof metrics.
+
+<ParamField path="templateId" type="string" required>
+  UUID of the template.
+</ParamField>
+
+```typescript
+const template = await client.templates.get('tmpl-uuid-here');
+
+console.log(template.name);             // "Customer Support Agent"
+console.log(template.description);      // "Full-featured tier-1 support agent"
+console.log(template.like_count);       // 42
+console.log(template.used_count);       // 387
+console.log(template.is_liked);         // false (for the current user)
+console.log(template.visibility);       // "public"
+console.log(template.workflow_schema);  // Full WorkflowDefinition
+
+console.log(template.creator.name);          // "ModuleX Team"
+console.log(template.creator.display_photo); // "https://cdn.example.com/avatar.png"
+```
+
+## mine
+
+Returns templates created by the authenticated user or their organization.
+
+```typescript
+const { templates, total } = await client.templates.mine();
+
+console.log(`You have ${total} template(s).`);
+for (const tmpl of templates) {
+  console.log(`${tmpl.name} — ${tmpl.status} — ${tmpl.used_count} uses`);
+}
+```
+
+## create
+
+Publishes a workflow as a template. The workflow schema is snapshotted at publication time.
+
+<ParamField path="params.workflowId" type="string" required>
+  UUID of the workflow to publish as a template.
+</ParamField>
+
+<ParamField path="params.name" type="string" required>
+  Template display name.
+</ParamField>
+
+<ParamField path="params.description" type="string" optional>
+  Description shown in the template marketplace.
+</ParamField>
+
+<ParamField path="params.tags" type="string[]" optional>
+  Tags for discoverability.
+</ParamField>
+
+<ParamField path="params.schemaImageUrl" type="string" optional>
+  URL to a canvas screenshot for the template thumbnail.
+</ParamField>
+
+```typescript
+const template = await client.templates.create({
+  workflowId: '550e8400-e29b-41d4-a716-446655440000',
+  name: 'RAG Q&A Assistant',
+  description: 'Retrieval-augmented generation pipeline with hybrid search and source citations.',
+  tags: ['rag', 'knowledge', 'qa', 'search'],
+  schemaImageUrl: 'https://cdn.example.com/templates/rag-qa-thumbnail.png',
+});
+
+console.log(template.id);      // "tmpl-uuid"
+console.log(template.status);  // "active"
+```
+
+## like
+
+Toggles the like/unlike state for a template. Calling this method a second time removes the like.
+
+<ParamField path="templateId" type="string" required>
+  UUID of the template to like or unlike.
+</ParamField>
+
+```typescript
+// First call — like
+const result = await client.templates.like('tmpl-uuid-here');
+console.log(result.liked);       // true
+console.log(result.like_count);  // 43
+
+// Second call — unlike (toggle)
+const toggled = await client.templates.like('tmpl-uuid-here');
+console.log(toggled.liked);       // false
+console.log(toggled.like_count);  // 42
+```
+
+## use
+
+Copies a template into the current organization as a new workflow. Increments the template's `used_count`.
+
+<ParamField path="templateId" type="string" required>
+  UUID of the template to use.
+</ParamField>
+
+```typescript
+const result = await client.templates.use('tmpl-uuid-here');
+
+console.log(result.success);            // true
+console.log(result.used_count);         // 388
+console.log(result.workflow.id);        // UUID of the newly created workflow
+console.log(result.workflow.name);      // "RAG Q&A Assistant" (copied from template)
+```
+
+## updateRequest
+
+Requests an update to a template you own by linking a newer version of your workflow.
+
+<ParamField path="templateId" type="string" required>
+  UUID of the template to update.
+</ParamField>
+
+<ParamField path="params.workflowId" type="string" required>
+  UUID of the updated workflow to snapshot.
+</ParamField>
+
+<ParamField path="params.name" type="string" optional>
+  Updated template display name.
+</ParamField>
+
+<ParamField path="params.description" type="string" optional>
+  Updated description.
+</ParamField>
+
+```typescript
+const updated = await client.templates.updateRequest('tmpl-uuid-here', {
+  workflowId: '550e8400-e29b-41d4-a716-446655440001',
+  name: 'RAG Q&A Assistant v2',
+  description: 'Now supports multi-document citations and streaming.',
+  tags: ['rag', 'knowledge', 'qa', 'streaming'],
+});
+
+console.log(updated.edit_version);  // 2
+```
+
+## createCreator
+
+Creates a creator profile for the authenticated user, enabling them to publish templates publicly.
+
+<ParamField path="params.name" type="string" required>
+  Public display name for the creator. 1–255 characters.
+</ParamField>
+
+<ParamField path="params.about" type="string" optional>
+  Short bio shown on the creator profile.
+</ParamField>
+
+<ParamField path="params.displayPhoto" type="string" optional>
+  URL to the creator's avatar image.
+</ParamField>
+
+<ParamField path="params.socials" type="object" optional>
+  Social links, e.g., `{ github: "https://github.com/alice", twitter: "https://x.com/alice" }`.
+</ParamField>
+
+```typescript
+const creator = await client.templates.createCreator({
+  name: 'Alice Chen',
+  about: 'AI workflow engineer and open-source contributor.',
+  displayPhoto: 'https://avatars.example.com/alice.jpg',
+  socials: {
+    github: 'https://github.com/alice-chen',
+    linkedin: 'https://linkedin.com/in/alice-chen',
+  },
+});
+
+console.log(creator.id);    // "creator-uuid"
+console.log(creator.name);  // "Alice Chen"
+```
+
+## getCreator
+
+Returns the creator profile associated with the authenticated user.
+
+```typescript
+const creator = await client.templates.getCreator();
+
+console.log(creator.name);           // "Alice Chen"
+console.log(creator.about);          // "AI workflow engineer..."
+console.log(creator.template_count); // 5
+console.log(creator.total_uses);     // 2400
+console.log(creator.socials);        // { github: "...", linkedin: "..." }
+```

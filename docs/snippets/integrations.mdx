@@ -1,0 +1,204 @@
+---
+title: "Integrations"
+description: "Browse and inspect available integrations — tools, LLM providers, and knowledge providers."
+---
+
+## Installation
+
+```bash
+npm install modulex
+```
+
+## Initialize Client
+
+```typescript
+import { Modulex } from 'modulex';
+
+const client = new Modulex({
+  apiKey: 'mx_live_...',
+  organizationId: 'your-org-id',
+});
+```
+
+## browse
+
+Returns a paginated catalog of all available integrations. Results are Redis-cached with a 10-minute TTL.
+
+<ParamField path="params.category" type="string" optional>
+  Filter by integration category.
+</ParamField>
+
+<ParamField path="params.type" type="string" optional>
+  Filter by integration type: `"tool"`, `"llm_provider"`, `"knowledge_provider"`.
+</ParamField>
+
+<ParamField path="params.authType" type="string" optional>
+  Filter by authentication type, e.g., `"api_key"`, `"oauth2"`.
+</ParamField>
+
+<ParamField path="params.search" type="string" optional>
+  Search query matching integration name or description.
+</ParamField>
+
+<ParamField path="params.includeDetails" type="boolean" optional>
+  Include actions, models, and auth schemas in the response. Default: `true`.
+</ParamField>
+
+<ParamField path="params.page" type="number" optional>
+  Page number (1-indexed). Default: 1.
+</ParamField>
+
+<ParamField path="params.pageSize" type="number" optional>
+  Items per page. Range: 1–100. Default: 50.
+</ParamField>
+
+```typescript
+// Browse all integrations
+const all = await client.integrations.browse();
+
+// Search for a specific integration
+const results = await client.integrations.browse({
+  search: 'github',
+  type: 'tool',
+  page: 1,
+  pageSize: 20,
+});
+
+for (const integration of results.items) {
+  console.log(`${integration.name} (${integration.type}) — ${integration.category}`);
+}
+
+// Browse LLM providers without details for lightweight listing
+const llmList = await client.integrations.browse({
+  type: 'llm_provider',
+  includeDetails: false,
+});
+```
+
+## tools
+
+Returns all tool integrations, optionally filtered by category.
+
+<ParamField path="params.category" type="string" optional>
+  Filter tools by category (e.g., `"search"`, `"communication"`, `"productivity"`).
+</ParamField>
+
+```typescript
+// All tools
+const tools = await client.integrations.tools();
+
+// Tools in the "search" category
+const searchTools = await client.integrations.tools({ category: 'search' });
+
+for (const tool of searchTools) {
+  console.log(`${tool.name}: ${tool.description}`);
+  console.log(`  Auth: ${tool.auth_type}`);
+  console.log(`  Actions: ${tool.actions?.map((a: { name: string }) => a.name).join(', ')}`);
+}
+```
+
+## tool
+
+Returns detailed information about a specific tool integration, including all available actions and their parameter schemas.
+
+<ParamField path="integrationName" type="string" required>
+  The integration's identifier, e.g., `"tavily"`, `"github"`, `"slack"`.
+</ParamField>
+
+```typescript
+const tavily = await client.integrations.tool('tavily');
+
+console.log(tavily.name);          // "tavily"
+console.log(tavily.description);   // "AI-powered search API"
+console.log(tavily.auth_type);     // "api_key"
+
+for (const action of tavily.actions) {
+  console.log(`  Action: ${action.name}`);
+  console.log(`  Parameters: ${JSON.stringify(action.parameters)}`);
+}
+```
+
+## llmProviders
+
+Returns all LLM provider integrations, optionally filtered by category.
+
+<ParamField path="params.category" type="string" optional>
+  Filter LLM providers by category.
+</ParamField>
+
+```typescript
+const providers = await client.integrations.llmProviders();
+
+for (const provider of providers) {
+  console.log(`${provider.name} — models: ${provider.models?.length ?? 0}`);
+}
+```
+
+## llmProvider
+
+Returns detailed information about a specific LLM provider, including all available models and their parameters.
+
+<ParamField path="providerName" type="string" required>
+  Provider identifier, e.g., `"openai"`, `"anthropic"`, `"google"`.
+</ParamField>
+
+```typescript
+const openai = await client.integrations.llmProvider('openai');
+
+console.log(openai.name);       // "openai"
+console.log(openai.auth_type);  // "api_key"
+
+for (const model of openai.models) {
+  console.log(`  ${model.id} — context: ${model.context_window} tokens`);
+  if (model.supports_vision) console.log('    (supports vision)');
+  if (model.supports_tools) console.log('    (supports tool use)');
+}
+```
+
+## knowledgeProviders
+
+Returns all knowledge provider integrations (vector databases and document stores), optionally filtered by category.
+
+<ParamField path="params.category" type="string" optional>
+  Filter knowledge providers by category.
+</ParamField>
+
+```typescript
+const providers = await client.integrations.knowledgeProviders();
+
+for (const provider of providers) {
+  console.log(`${provider.name} — type: ${provider.provider_type}`);
+}
+```
+
+## knowledgeProvider
+
+Returns detailed information about a specific knowledge provider.
+
+<ParamField path="providerName" type="string" required>
+  Provider identifier, e.g., `"pinecone"`, `"qdrant"`, `"native"`.
+</ParamField>
+
+```typescript
+const pinecone = await client.integrations.knowledgeProvider('pinecone');
+
+console.log(pinecone.name);         // "pinecone"
+console.log(pinecone.description);  // "Fully managed vector database"
+console.log(pinecone.auth_type);    // "api_key"
+```
+
+## get
+
+Generic integration lookup by name. Prefer the type-specific methods (`tool`, `llmProvider`, `knowledgeProvider`) when the type is known.
+
+<ParamField path="integrationName" type="string" required>
+  Integration identifier.
+</ParamField>
+
+```typescript
+// Falls back gracefully when the type is unknown at compile time
+const integration = await client.integrations.get('tavily');
+
+console.log(integration.name);  // "tavily"
+console.log(integration.type);  // "tool"
+```
