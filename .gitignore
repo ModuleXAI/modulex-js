@@ -6,3 +6,5 @@ coverage/
 *.tgz
 .DS_Store
 *.log
+SDK_PROMPT_TYPESCRIPT.md
+SDK_REFERENCE.md
