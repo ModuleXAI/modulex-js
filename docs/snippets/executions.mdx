@@ -6,7 +6,7 @@ description: "Run workflows in four modes, stream real-time events via SSE, resu
 ## Installation
 
 ```bash
-npm install modulex
+npm install modulex-js
 ```
 
 ## Initialize Client
@@ -220,7 +220,8 @@ Resumes a workflow that has paused at an `interrupt` node, providing the human's
 
 ```typescript
 // After receiving an "interrupt" SSE event, resume with the human's answer
-const resumed = await client.executions.resume('thread-uuid-here', {
+const resumed = await client.executions.resume({
+  threadId: 'thread-uuid-here',
   workflowId: '550e8400-e29b-41d4-a716-446655440000',
   resumeValue: { approved: true, comment: 'Looks good, proceed.' },
   runId: 'run-uuid-here',
@@ -273,10 +274,10 @@ const execution = await client.executions.run({
 
 try {
   for await (const event of client.executions.listen(execution.run_id)) {
-    switch (event.type) {
+    switch (event.event) {
       case 'metadata':
         console.log(`Workflow: ${event.data.workflow_name} v${event.data.workflow_version}`);
-        console.log(`Nodes: ${event.data.nodes.map((n: { id: string }) => n.id).join(', ')}`);
+        console.log(`Nodes: ${event.data.nodes.join(', ')}`);
         break;
 
       case 'node_update':
@@ -295,7 +296,8 @@ try {
         console.log(`Message: ${event.data.message}`);
         console.log(`Instructions: ${event.data.resume_instructions}`);
         // Resume with human input
-        await client.executions.resume(execution.thread_id, {
+        await client.executions.resume({
+          threadId: execution.thread_id,
           workflowId: '550e8400-e29b-41d4-a716-446655440000',
           resumeValue: { decision: 'approve' },
           runId: execution.run_id,

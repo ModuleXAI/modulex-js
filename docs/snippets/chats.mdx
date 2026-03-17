@@ -6,7 +6,7 @@ description: "List, retrieve, stream, and manage chat sessions created by workfl
 ## Installation
 
 ```bash
-npm install modulex
+npm install modulex-js
 ```
 
 ## Initialize Client
@@ -44,7 +44,7 @@ Opens a persistent SSE connection that delivers real-time chat list update notif
 
 ```typescript
 for await (const event of client.chats.stream()) {
-  switch (event.type) {
+  switch (event.event) {
     case 'connected':
       console.log('Chat list stream connected.');
       break;
