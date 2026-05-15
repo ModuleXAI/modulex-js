@@ -8,3 +8,7 @@ coverage/
 *.log
 SDK_PROMPT_TYPESCRIPT.md
 SDK_REFERENCE.md
+
+# modulex-meta orchestration state (local-only for public repos)
+.mxmeta/
+.claude/
