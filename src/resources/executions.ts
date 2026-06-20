@@ -1,5 +1,9 @@
 /**
- * Executions resource — workflow run, resume, cancel, listen, and state endpoints.
+ * Executions resource — ephemeral workflow execution control under `/workflows`
+ * (run, state, resume, cancel, listen).
+ *
+ * For durable run history (list/get persisted runs) see the {@link WorkflowRuns}
+ * resource (`client.workflowRuns`).
  * @module resources/executions
  */
 
@@ -16,15 +20,20 @@ import type {
 } from '../types';
 
 /**
- * Provides methods for workflow execution endpoints under `/workflows`.
+ * Provides methods for workflow execution-control endpoints under `/workflows`.
  */
 export class Executions extends BaseResource {
   /**
    * POST /workflows/run
    *
-   * Initiates a workflow run. Supports four modes: existing workflow, ad-hoc
-   * workflow, direct LLM call, and system workflow. Returns immediately with
-   * run metadata; stream events via `listen()`.
+   * Initiates a workflow run. Supports two modes: a saved workflow (`workflowId`,
+   * which requires an active deployment — the backend returns 400 otherwise) or
+   * an inline ad-hoc definition (`workflow`). Returns immediately with run
+   * metadata (`status` is `"running"` for streaming runs); stream events via
+   * `listen()`.
+   *
+   * The legacy direct-LLM mode was removed; an `llm_config`-only request now
+   * returns HTTP 410 — use `client.assistant.chat()` instead.
    */
   async run(
     params: WorkflowRunParams,
@@ -50,6 +59,9 @@ export class Executions extends BaseResource {
    * POST /workflows/resume/{threadId}
    *
    * Resumes a workflow that is waiting at an interrupt node.
+   *
+   * Guard responses: 400 (missing `resumeValue` or `runId`), 403 (the run
+   * belongs to another organization), 404 (no checkpoint for the thread).
    */
   async resume(
     params: WorkflowResumeParams,
@@ -66,7 +78,11 @@ export class Executions extends BaseResource {
   /**
    * POST /workflows/cancel/{runId}
    *
-   * Requests cancellation of an in-progress workflow run.
+   * Requests cancellation of an in-progress workflow run. On success the
+   * response `status` is `"cancellation_requested"`.
+   *
+   * Guard responses: 404 (unknown run), 403 (the run belongs to another
+   * organization), 400 (the run is not in a `running`/`interrupted` state).
    */
   async cancel(
     runId: string,
@@ -83,13 +99,18 @@ export class Executions extends BaseResource {
   /**
    * GET /workflows/listen/{runId} — SSE stream
    *
-   * Opens a Server-Sent Events stream for real-time execution events of
-   * an in-progress workflow run. Yields typed `WorkflowSSEEvent` values.
+   * Opens a Server-Sent Events stream for real-time execution events of an
+   * in-progress workflow run. This is a data-only stream: each yielded value is
+   * a {@link WorkflowSSEEvent} discriminated on its `type` field (`metadata`,
+   * `node_started`, `node_update`, `interrupt`, `resumed`, `done`, `cancelled`,
+   * `error`). The stream ends after a `done` or `error` event.
    */
-  listen(runId: string, options?: RequestOptions): AsyncGenerator<WorkflowSSEEvent> {
-    return this.streamSSE(
-      `/workflows/listen/${runId}`,
-      options,
-    ) as AsyncGenerator<WorkflowSSEEvent>;
+  async *listen(
+    runId: string,
+    options?: RequestOptions,
+  ): AsyncGenerator<WorkflowSSEEvent> {
+    for await (const frame of this.streamSSE(`/workflows/listen/${runId}`, options)) {
+      yield frame.data as unknown as WorkflowSSEEvent;
+    }
   }
 }

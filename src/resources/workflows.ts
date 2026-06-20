@@ -15,6 +15,7 @@ import type {
   DeleteWorkflowResponse,
   BuilderDetailsParams,
   BuilderDetailsResponse,
+  WorkflowChangeEvent,
 } from '../types';
 
 /**
@@ -24,7 +25,8 @@ export class Workflows extends BaseResource {
   /**
    * POST /workflows
    *
-   * Creates a new workflow with the given schema.
+   * Creates a new workflow with the given schema. Returns HTTP 201.
+   * Requires organization admin/owner role.
    */
   async create(
     params: CreateWorkflowParams,
@@ -98,6 +100,7 @@ export class Workflows extends BaseResource {
    * PUT /workflows/{workflowId}
    *
    * Updates an existing workflow. Only provided fields are changed.
+   * Requires organization admin/owner role.
    */
   async update(
     workflowId: string,
@@ -110,7 +113,9 @@ export class Workflows extends BaseResource {
   /**
    * DELETE /workflows/{workflowId}
    *
-   * Soft-deletes a workflow.
+   * Permanently (hard) deletes a workflow. This is IRREVERSIBLE — the workflow
+   * row and its schema are removed from the database, not soft-deleted.
+   * Requires organization admin/owner role.
    */
   async delete(
     workflowId: string,
@@ -142,5 +147,22 @@ export class Workflows extends BaseResource {
         integration_name: params?.integrationName,
       },
     });
+  }
+
+  /**
+   * GET /workflows/{workflowId}/changes — SSE stream
+   *
+   * Opens a Server-Sent Events stream of real-time collaboration changes for a
+   * workflow (canvas/composer sync). This is a data-only stream: each yielded
+   * value is a {@link WorkflowChangeEvent} discriminated on its `type` field
+   * (`connected`, `workflow_updated`, `user_joined`, `user_left`).
+   */
+  async *listenChanges(
+    workflowId: string,
+    options?: RequestOptions,
+  ): AsyncGenerator<WorkflowChangeEvent> {
+    for await (const frame of this.streamSSE(`/workflows/${workflowId}/changes`, options)) {
+      yield frame.data as unknown as WorkflowChangeEvent;
+    }
   }
 }

@@ -100,6 +100,53 @@ describe.skipIf(MISSING_ENV)('Schedules', () => {
     );
   });
 
+  it('GET /schedules/{id}/runs/{runId} — getRun', async () => {
+    if (!scheduleId) {
+      skip('GET', '/schedules/{id}/runs/{runId}', 'No schedule created');
+      return;
+    }
+    let runId = '';
+    try {
+      const runs = await client.schedules.runs(scheduleId, { limit: 1 });
+      runId = runs.runs[0]?.id ?? '';
+    } catch { /* ignore */ }
+    if (!runId) {
+      skip('GET', '/schedules/{id}/runs/{runId}', 'No runs available');
+      return;
+    }
+    await tracked('GET', `/schedules/${scheduleId}/runs/${runId}`, () =>
+      client.schedules.getRun(scheduleId, runId),
+    );
+  });
+
+  it('POST /schedules/{id}/runs/{runId}/retry — retryRun', async () => {
+    if (!scheduleId) {
+      skip('POST', '/schedules/{id}/runs/{runId}/retry', 'No schedule created');
+      return;
+    }
+    let runId = '';
+    try {
+      const runs = await client.schedules.runs(scheduleId, { status: 'failed', limit: 1 });
+      runId = runs.runs[0]?.id ?? '';
+    } catch { /* ignore */ }
+    if (!runId) {
+      skip('POST', '/schedules/{id}/runs/{runId}/retry', 'No failed run to retry');
+      return;
+    }
+    try {
+      await tracked('POST', `/schedules/${scheduleId}/runs/${runId}/retry`, () =>
+        client.schedules.retryRun(scheduleId, runId),
+      );
+    } catch (err: any) {
+      // 400 = run not in a retryable state
+      if (err.status === 400) {
+        skip('POST', '/schedules/{id}/runs/{runId}/retry', `Not retryable: ${err.message}`);
+        return;
+      }
+      throw err;
+    }
+  });
+
   it('DELETE /schedules/{id} — delete', async () => {
     if (!scheduleId) {
       skip('DELETE', '/schedules/{id}', 'No schedule created');

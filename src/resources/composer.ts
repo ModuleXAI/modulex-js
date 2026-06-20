@@ -4,16 +4,25 @@
  */
 
 import { BaseResource } from '../base';
-import type { SSEEvent } from '../streaming';
 import type { RequestOptions } from '../types';
 import type {
   ComposerChatParams,
   ComposerChatResponse,
   ComposerChatDetailResponse,
-  ComposerHistoryParams,
+  ComposerListParams,
+  ComposerChatListResponse,
   ComposerDeleteParams,
   ComposerStatusResponse,
-  SuccessResponse,
+  ComposerSaveParams,
+  ComposerSaveResponse,
+  ComposerRevertResponse,
+  ComposerResumeParams,
+  ComposerResumeResponse,
+  ComposerFocusParams,
+  ComposerFocusResponse,
+  ComposerSSEEvent,
+  ComposerDeleteResponse,
+  ComposerCancelResponse,
 } from '../types';
 
 /**
@@ -25,6 +34,9 @@ export class Composer extends BaseResource {
    *
    * Starts a new Composer chat or sends a message to an existing session.
    * Returns a run ID that can be used to listen to the SSE stream.
+   *
+   * Errors: 409 if the chat has a pending HITL question (answer it via
+   * `resume()` first); 402/403/429 for billing/limit gates.
    */
   async chat(
     params: ComposerChatParams,
@@ -34,9 +46,30 @@ export class Composer extends BaseResource {
   }
 
   /**
+   * GET /composer/chats
+   *
+   * Lists the current user's Composer chats, newest first, with cursor
+   * pagination (`next_cursor` is an ISO `updated_at` timestamp).
+   */
+  async list(
+    params?: ComposerListParams,
+    options?: RequestOptions,
+  ): Promise<ComposerChatListResponse> {
+    return this._get<ComposerChatListResponse>('/composer/chats', {
+      ...options,
+      params: {
+        ...options?.params,
+        limit: params?.limit,
+        cursor: params?.cursor,
+      },
+    });
+  }
+
+  /**
    * GET /composer/chat/{composerChatId}
    *
-   * Returns a Composer chat session with its messages and workflow snapshot status.
+   * Returns a Composer chat session with its messages, touched workflows, and
+   * any open HITL question (`pending_user_input_request`).
    */
   async get(
     composerChatId: string,
@@ -51,15 +84,59 @@ export class Composer extends BaseResource {
   /**
    * GET /composer/chat/{composerChatId}/listen/{runId} — SSE
    *
-   * Opens a Server-Sent Events stream for real-time Composer output during a run.
+   * Opens a Server-Sent Events stream for real-time Composer output. This is a
+   * data-only stream: each yielded value is a {@link ComposerSSEEvent}
+   * discriminated on `type`. A `user_input_request` frame signals a HITL pause —
+   * answer it with `resume()`.
    */
-  listen(
+  async *listen(
     composerChatId: string,
     runId: string,
     options?: RequestOptions,
-  ): AsyncGenerator<SSEEvent> {
-    return this.streamSSE(
+  ): AsyncGenerator<ComposerSSEEvent> {
+    for await (const frame of this.streamSSE(
       `/composer/chat/${composerChatId}/listen/${runId}`,
+      options,
+    )) {
+      yield frame.data as unknown as ComposerSSEEvent;
+    }
+  }
+
+  /**
+   * POST /composer/chat/{composerChatId}/resume
+   *
+   * Answers an open HITL question and resumes the paused run. Returns a NEW
+   * `run_id` to listen on.
+   *
+   * Errors: 410 if the `requestId` is not pending or already consumed; 403 if
+   * the caller is not the user who triggered the question. The `llm` config is
+   * required in production (the backend returns 400 if omitted).
+   */
+  async resume(
+    composerChatId: string,
+    params: ComposerResumeParams,
+    options?: RequestOptions,
+  ): Promise<ComposerResumeResponse> {
+    return this._post<ComposerResumeResponse>(
+      `/composer/chat/${composerChatId}/resume`,
+      params,
+      options,
+    );
+  }
+
+  /**
+   * PATCH /composer/chat/{composerChatId}/focus
+   *
+   * Sets (or clears, with `workflowId: null`) the chat's focused workflow.
+   */
+  async focus(
+    composerChatId: string,
+    params: ComposerFocusParams,
+    options?: RequestOptions,
+  ): Promise<ComposerFocusResponse> {
+    return this._patch<ComposerFocusResponse>(
+      `/composer/chat/${composerChatId}/focus`,
+      params,
       options,
     );
   }
@@ -67,15 +144,18 @@ export class Composer extends BaseResource {
   /**
    * POST /composer/chat/{composerChatId}/save
    *
-   * Saves the Composer's current workflow changes to the associated workflow.
+   * Saves the Composer's pending workflow changes. Without `workflowId` it
+   * targets the chat's focused workflow (400 if there is none). Returns a
+   * `workflow_sync` payload for refreshing the canvas.
    */
   async save(
     composerChatId: string,
+    params?: ComposerSaveParams,
     options?: RequestOptions,
-  ): Promise<SuccessResponse> {
-    return this._post<SuccessResponse>(
+  ): Promise<ComposerSaveResponse> {
+    return this._post<ComposerSaveResponse>(
       `/composer/chat/${composerChatId}/save`,
-      undefined,
+      params,
       options,
     );
   }
@@ -83,63 +163,48 @@ export class Composer extends BaseResource {
   /**
    * POST /composer/chat/{composerChatId}/revert
    *
-   * Reverts the Composer's pending changes, restoring the last saved state.
+   * Reverts pending changes to the last snapshot. Without `workflowId` it
+   * targets the focused workflow (400 if there is none, or if no snapshot
+   * exists). Returns a `workflow_sync` payload.
    */
   async revert(
     composerChatId: string,
+    params?: ComposerSaveParams,
     options?: RequestOptions,
-  ): Promise<SuccessResponse> {
-    return this._post<SuccessResponse>(
+  ): Promise<ComposerRevertResponse> {
+    return this._post<ComposerRevertResponse>(
       `/composer/chat/${composerChatId}/revert`,
-      undefined,
-      options,
-    );
-  }
-
-  /**
-   * GET /composer/chat/workflow/{workflowId}/history
-   *
-   * Returns the Composer chat history associated with a workflow.
-   */
-  async history(
-    workflowId: string,
-    params?: ComposerHistoryParams,
-    options?: RequestOptions,
-  ): Promise<Record<string, unknown>> {
-    return this._get<Record<string, unknown>>(
-      `/composer/chat/workflow/${workflowId}/history`,
-      {
-        ...options,
-        params: {
-          ...options?.params,
-          limit: params?.limit,
-        },
-      },
-    );
-  }
-
-  /**
-   * DELETE /composer/chat/{composerChatId}
-   *
-   * Deletes a Composer chat session. Pass `permanent: true` to also delete
-   * the associated workflow.
-   */
-  async delete(
-    composerChatId: string,
-    params?: ComposerDeleteParams,
-    options?: RequestOptions,
-  ): Promise<SuccessResponse> {
-    return this._delete<SuccessResponse>(
-      `/composer/chat/${composerChatId}`,
       params,
       options,
     );
   }
 
   /**
+   * DELETE /composer/chat/{composerChatId}
+   *
+   * Deletes a Composer chat session. Pass `permanent: true` for a hard delete
+   * (default is a soft delete). `permanent` is sent as a query parameter.
+   */
+  async delete(
+    composerChatId: string,
+    params?: ComposerDeleteParams,
+    options?: RequestOptions,
+  ): Promise<ComposerDeleteResponse> {
+    return this._delete<ComposerDeleteResponse>(
+      `/composer/chat/${composerChatId}`,
+      undefined,
+      {
+        ...options,
+        params: { ...options?.params, permanent: params?.permanent },
+      },
+    );
+  }
+
+  /**
    * GET /composer/chat/{composerChatId}/status
    *
-   * Returns the real-time status of a Composer chat session.
+   * Returns the real-time status of a Composer chat session, including HITL
+   * pause state (`awaiting_input` / `pending_request_id`).
    */
   async status(
     composerChatId: string,
@@ -159,8 +224,8 @@ export class Composer extends BaseResource {
   async cancel(
     composerChatId: string,
     options?: RequestOptions,
-  ): Promise<SuccessResponse> {
-    return this._post<SuccessResponse>(
+  ): Promise<ComposerCancelResponse> {
+    return this._post<ComposerCancelResponse>(
       `/composer/chat/${composerChatId}/cancel`,
       undefined,
       options,

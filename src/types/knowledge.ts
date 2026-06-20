@@ -9,16 +9,26 @@
 
 /**
  * Configuration for the embedding model used to vectorize documents and queries.
+ *
+ * The backend stores `embedding_config` as a free-form object, but the keys it
+ * actually reads are `credential_id` and `model_id`. Field names here are kept
+ * in snake_case to match the wire shape the embedding pipeline consumes.
  */
 export interface EmbeddingConfig {
-  /** Credential ID for the embedding provider. */
-  provider_credential_id?: string;
+  /**
+   * Credential ID for the embedding provider. This is the key the backend
+   * reads (`embedding_config.credential_id`); the embedding pipeline uses it
+   * to resolve provider authentication.
+   */
+  credential_id?: string;
   /** Provider name (e.g. `"openai"`, `"cohere"`). */
   provider?: string;
   /** Model identifier (e.g. `"text-embedding-3-small"`). */
-  model?: string;
+  model_id?: string;
   /** Expected vector dimension for the model. */
   dimension?: number;
+  /** Allow additional provider-specific configuration keys. */
+  [key: string]: unknown;
 }
 
 /**
@@ -29,8 +39,13 @@ export interface ChunkingConfig {
   strategy?: string;
   /** Target token/character count per chunk. */
   chunk_size?: number;
-  /** Overlap in tokens/characters between consecutive chunks. */
-  overlap?: number;
+  /**
+   * Overlap in tokens/characters between consecutive chunks.
+   *
+   * Wire field name is `chunk_overlap` — the embedding pipeline reads this key.
+   * (Previously named `overlap`, which the backend silently dropped.)
+   */
+  chunk_overlap?: number;
   /** Custom separator strings used by recursive/sentence strategies. */
   separators?: string[];
 }
@@ -72,14 +87,24 @@ export interface KnowledgeBaseResponse {
   name: string;
   description: string | null;
   organization_id: string;
+  /** User ID of the member who created the knowledge base. */
+  created_by_user_id: string;
+  /** Credential ID associated with the knowledge base, if any. */
+  credential_id: string | null;
   embedding_config: EmbeddingConfig;
   chunking_config: ChunkingConfig;
+  /** Number of documents in the knowledge base. Always present. */
+  document_count: number;
+  /** Total number of indexed chunks. Always present. */
+  total_chunks: number;
+  /** Total number of tokens across all chunks. Always present. */
+  total_tokens: number;
   /** Lifecycle status (e.g. `"active"`, `"building"`, `"error"`). */
   status: string;
-  document_count?: number;
-  total_chunks?: number;
-  created_at: string;
-  updated_at: string;
+  created_at: string | null;
+  updated_at: string | null;
+  /** Optional aggregated statistics for the knowledge base. */
+  stats?: Record<string, unknown> | null;
 }
 
 /**
@@ -92,21 +117,21 @@ export interface KnowledgeBaseListParams {
 }
 
 /**
- * Paginated list of knowledge bases.
- */
-export interface KnowledgeBaseListResponse {
-  knowledge_bases: KnowledgeBaseResponse[];
-  total: number;
-  limit: number;
-  offset: number;
-}
-
-/**
  * Aggregated statistics across all knowledge bases in an organization.
- * The shape is extensible; provider-specific fields may be present.
+ *
+ * Mirrors the backend `OrganizationStatsResponse` shape.
  */
 export interface KnowledgeBaseStatsResponse {
-  [key: string]: unknown;
+  /** Number of knowledge bases in the organization. */
+  knowledge_base_count: number;
+  /** Total number of documents across all knowledge bases. */
+  total_documents: number;
+  /** Total number of indexed chunks across all knowledge bases. */
+  total_chunks: number;
+  /** Total number of tokens across all knowledge bases. */
+  total_tokens: number;
+  /** Combined byte size of all stored files. */
+  total_file_size_bytes: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,13 +146,17 @@ export interface DocumentResponse {
   knowledge_base_id: string;
   filename: string;
   file_type: string;
-  file_size: number;
-  /** Processing status (e.g. `"pending"`, `"processing"`, `"ready"`, `"error"`). */
+  /** Size of the source file in bytes. */
+  file_size_bytes: number | null;
+  /** Processing status: `"pending"`, `"processing"`, `"completed"`, or `"failed"`. */
   status: string;
-  metadata?: Record<string, unknown>;
-  chunk_count?: number;
-  created_at: string;
-  updated_at: string;
+  /** Number of chunks produced from this document. */
+  chunk_count: number;
+  /** Number of tokens across this document's chunks. */
+  token_count: number;
+  /** Error message if processing failed; `null` otherwise. */
+  error_message: string | null;
+  created_at: string | null;
 }
 
 /**
@@ -152,13 +181,30 @@ export interface UploadDocumentParams {
 }
 
 /**
- * Status and progress of a document being processed.
+ * Processing status of a document.
+ *
+ * This endpoint has no `response_model`; it returns the raw service dict.
+ * `document_id`, `status`, `filename`, and `file_type` are always present.
+ * The remaining fields are conditional on `status`.
  */
 export interface DocumentStatusResponse {
+  document_id: string;
+  /** Processing status: `"pending"`, `"processing"`, `"completed"`, or `"failed"`. */
   status: string;
-  /** Processing progress as a fraction (0–1). */
-  progress?: number;
-  error?: string;
+  filename: string;
+  file_type: string;
+  /** Human-readable status message. */
+  message?: string;
+  /** Present only when `status` is `"processing"`. */
+  processing_started_at?: string | null;
+  /** Present only when `status` is `"completed"`. */
+  processing_completed_at?: string | null;
+  /** Present only when `status` is `"completed"`. */
+  chunk_count?: number;
+  /** Present only when `status` is `"completed"`. */
+  token_count?: number;
+  /** Present only when `status` is `"failed"`. */
+  error?: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +216,13 @@ export interface DocumentStatusResponse {
  */
 export interface ChunkResponse {
   id: string;
+  /** ID of the document this chunk belongs to. */
+  document_id?: string;
+  /** Position of this chunk within its document. */
+  chunk_index?: number;
   content: string;
+  /** Number of tokens in this chunk. */
+  token_count?: number;
   metadata?: Record<string, unknown>;
   /** Similarity score (0–1). Present only in search results. */
   score?: number;
@@ -209,23 +261,36 @@ export interface SearchParams {
 }
 
 /**
- * A single search result entry.
+ * A single search match entry.
+ *
+ * `content` and `metadata` are present only when the request enabled
+ * `includeContent` / `includeMetadata` (both default to `true`).
  */
-export interface SearchResult {
+export interface SearchMatch {
   chunk_id: string;
-  content: string;
-  score: number;
-  metadata: Record<string, unknown>;
   document_id: string;
+  /** Filename of the document the matching chunk belongs to. */
+  document_filename: string;
+  /** Position of the matching chunk within its document. */
+  chunk_index: number;
+  score: number;
+  /** Chunk content; omitted when `includeContent` is `false`. */
+  content?: string;
+  /** Chunk metadata; omitted when `includeMetadata` is `false`. */
+  metadata?: Record<string, unknown>;
 }
 
 /**
  * Response from a knowledge base search.
+ *
+ * Returned by `search`, `searchMultiple`, and `hybridSearch`.
  */
 export interface SearchResponse {
-  results: SearchResult[];
   query: string;
-  total: number;
+  knowledge_base_id: string;
+  top_k: number;
+  total_matches: number;
+  matches: SearchMatch[];
 }
 
 /**

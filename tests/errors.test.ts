@@ -99,3 +99,68 @@ describe('createErrorFromStatus', () => {
     expect(error.message).toBe('HTTP 500 error');
   });
 });
+
+describe('structured error envelopes', () => {
+  const headers = new Headers();
+
+  it('parses dict-shaped detail (rate-limit) into message + code/reason', () => {
+    const body = { detail: { code: 'RATE_LIMITED', reason: 'Too many requests', layer: 'auth', limit: 100, current: 101 } };
+    const error = createErrorFromStatus(429, body, headers);
+    expect(error.message).toBe('Too many requests (RATE_LIMITED)');
+    expect(error.code).toBe('RATE_LIMITED');
+    expect(error.reason).toBe('Too many requests');
+    expect(error.layer).toBe('auth');
+  });
+
+  it('parses a flat top-level envelope without a detail wrapper (BillingDenied)', () => {
+    const body = { code: 'BILLING_DENIED', reason: 'Insufficient credits', layer: 'billing' };
+    const error = createErrorFromStatus(402, body, headers);
+    expect(error.message).toBe('Insufficient credits (BILLING_DENIED)');
+    expect(error.code).toBe('BILLING_DENIED');
+    expect(error.reason).toBe('Insufficient credits');
+    expect(error.layer).toBe('billing');
+  });
+
+  it('derives message from code alone when reason is absent', () => {
+    const error = createErrorFromStatus(403, { code: 'FORBIDDEN' }, headers);
+    expect(error.message).toBe('FORBIDDEN');
+    expect(error.code).toBe('FORBIDDEN');
+  });
+
+  it('falls back to a bare {message} body', () => {
+    const error = createErrorFromStatus(400, { message: 'bad input' }, headers);
+    expect(error.message).toBe('bad input');
+  });
+
+  it('leaves code/reason undefined for plain string detail', () => {
+    const error = createErrorFromStatus(404, { detail: 'not found' }, headers);
+    expect(error.message).toBe('not found');
+    expect(error.code).toBeUndefined();
+    expect(error.reason).toBeUndefined();
+  });
+});
+
+describe('RateLimitError header parsing', () => {
+  it('parses X-RateLimit-* and Retry-After headers', () => {
+    const headers = new Headers({
+      'retry-after': '12',
+      'x-ratelimit-limit': '100',
+      'x-ratelimit-remaining': '0',
+      'x-ratelimit-reset': '1718800000',
+    });
+    const error = new RateLimitError('rate limited', { detail: { code: 'RL', reason: 'slow down' } }, headers);
+    expect(error.retryAfter).toBe(12);
+    expect(error.limit).toBe(100);
+    expect(error.remaining).toBe(0);
+    expect(error.reset).toBe(1718800000);
+    expect(error.code).toBe('RL');
+    expect(error.reason).toBe('slow down');
+  });
+
+  it('leaves rate-limit fields undefined when headers are absent', () => {
+    const error = new RateLimitError('rate limited', {}, new Headers());
+    expect(error.limit).toBeUndefined();
+    expect(error.remaining).toBeUndefined();
+    expect(error.reset).toBeUndefined();
+  });
+});

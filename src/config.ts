@@ -8,7 +8,12 @@ export interface ModulexConfig {
   /** Default organization ID for all requests. Can be overridden per-request. */
   organizationId?: string;
 
-  /** Base URL for the ModuleX API. */
+  /**
+   * Base URL for the ModuleX REST API (the root; routers are mounted at the root
+   * with NO version prefix, so do not append `/api` or `/v1`). Defaults to the
+   * production host. For local development point this at your dev server,
+   * e.g. `http://localhost:8000`.
+   */
   baseUrl?: string;
 
   /** Request timeout in milliseconds. */
@@ -31,7 +36,11 @@ export interface ResolvedConfig {
   fetch: typeof globalThis.fetch;
 }
 
-/** Default configuration values. */
+/**
+ * Default production REST API host. Routers are mounted at the root (no version
+ * prefix); the SDK builds request URLs as `baseUrl + path`. Override via
+ * `baseUrl` in the client config for staging/local environments.
+ */
 export const DEFAULT_BASE_URL = 'https://api.modulex.dev';
 export const DEFAULT_TIMEOUT = 30_000;
 export const DEFAULT_MAX_RETRIES = 3;

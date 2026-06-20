@@ -8,13 +8,19 @@
  * Field names are camelCase; the SDK converts them to snake_case before sending.
  */
 export interface CreateApiKeyParams {
-  /** Human-readable label for the key. */
+  /** Human-readable label for the key. Must be 1-255 characters. */
   name: string;
-  /** Scope the key to a specific organization. Defaults to the client-level org. */
+  /**
+   * Scope the key to a specific organization.
+   * If omitted, the key works for all of the user's organizations.
+   */
   organizationId?: string;
   /** ISO-8601 datetime after which the key becomes invalid. */
   expiresAt?: string;
-  /** Maximum number of API calls allowed per minute for this key. */
+  /**
+   * Maximum number of API calls allowed per minute for this key.
+   * Must be between 1 and 1000 (backend default: 60).
+   */
   rateLimitPerMinute?: number;
 }
 
@@ -30,13 +36,21 @@ export interface ApiKeyResponse {
    * Only returned once, immediately after creation — store it securely.
    */
   key?: string;
-  /** Masked hint showing the first / last characters of the key. */
+  /** Identifier hint: the first 8 characters of the key. */
   key_hint: string;
+  /** Masked key for display, e.g. `mx_live_XXXX****`. */
+  masked_key: string;
   organization_id: string | null;
   expires_at: string | null;
-  rate_limit_per_minute: number | null;
+  /** Whether the key has passed its expiration datetime. */
+  is_expired: boolean;
+  /** Whether the key is active (i.e. not revoked). */
+  is_active: boolean;
+  rate_limit_per_minute: number;
+  /** ISO-8601 datetime the key was last used, or null if never used. */
+  last_used_at: string | null;
   created_at: string;
-  is_revoked?: boolean;
+  /** ISO-8601 datetime the key was revoked, or null if still active. */
   revoked_at?: string | null;
 }
 
@@ -54,7 +68,10 @@ export interface CreateApiKeyResponse extends ApiKeyResponse {
  */
 export interface ApiKeyListResponse {
   keys: ApiKeyResponse[];
-  total?: number;
+  /** Total number of keys returned. Always present. */
+  total: number;
+  /** Maximum number of keys allowed per user. */
+  max_keys: number;
 }
 
 /**

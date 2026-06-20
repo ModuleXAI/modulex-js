@@ -52,22 +52,20 @@ describe('Executions Resource', () => {
     expect(body.stream).toBe(true);
   });
 
-  it('should run a direct LLM call', async () => {
+  it('should run an inline ad-hoc workflow with attribution', async () => {
     const runData = { status: 'running', run_id: 'r2', thread_id: 't2' };
     mockFetch.mockResolvedValueOnce(jsonResponse(runData));
 
     await client.executions.run({
-      llm: {
-        integration_name: 'openai',
-        provider_id: 'openai',
-        model_id: 'gpt-4o-mini',
-        temperature: 0.4,
-      },
+      workflow: { metadata: { name: 'adhoc' } } as never,
+      attributionWorkflowId: 'wf-99',
       input: { messages: [{ role: 'user', content: 'Hello' }] },
     });
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body);
-    expect(body.llm.integration_name).toBe('openai');
+    // camelCase params are converted to snake_case on the wire
+    expect(body.attribution_workflow_id).toBe('wf-99');
+    expect(body.workflow).toBeDefined();
   });
 
   it('should get execution state', async () => {
@@ -105,22 +103,57 @@ describe('Executions Resource', () => {
     expect(mockFetch.mock.calls[0][0]).toContain('/workflows/cancel/r1');
   });
 
-  it('should listen to SSE events', async () => {
+  it('should listen to SSE events (data-only frames discriminated on type)', async () => {
+    // The backend listen stream is data-only: the discriminant is data.type,
+    // with mixed wrapped (metadata/done) and flat (node_update) envelopes.
     mockFetch.mockResolvedValueOnce(sseResponse(
-      'event: metadata\ndata: {"run_id":"r1","workflow_name":"Test"}\n\n' +
-      'event: node_update\ndata: {"node_id":"n1","status":"completed"}\n\n' +
-      'event: done\ndata: {"steps_executed":2,"total_execution_time_ms":1000}\n\n',
+      'data: {"type":"metadata","data":{"run_id":"r1","workflow_name":"Test"}}\n\n' +
+      'data: {"type":"node_update","node":"n1","name":"Node 1","output":{"ok":true}}\n\n' +
+      'data: {"type":"done","data":{"message":"Workflow completed successfully"}}\n\n',
     ));
 
-    const events = [];
+    const events: any[] = [];
     for await (const event of client.executions.listen('r1')) {
       events.push(event);
     }
 
     expect(events).toHaveLength(3);
-    expect(events[0].event).toBe('metadata');
-    expect(events[1].event).toBe('node_update');
-    expect(events[2].event).toBe('done');
-    expect(events[2].data.steps_executed).toBe(2);
+    expect(events[0].type).toBe('metadata');
+    expect(events[0].data.run_id).toBe('r1'); // wrapped
+    expect(events[1].type).toBe('node_update');
+    expect(events[1].node).toBe('n1'); // flat
+    expect(events[2].type).toBe('done');
+    expect(events[2].data.message).toBe('Workflow completed successfully'); // wrapped
+  });
+});
+
+describe('WorkflowRuns Resource', () => {
+  let mockFetch: ReturnType<typeof vi.fn>;
+  let client: Modulex;
+
+  beforeEach(() => {
+    mockFetch = vi.fn();
+    client = new Modulex({ apiKey: 'mx_live_test', organizationId: 'org-1', fetch: mockFetch });
+  });
+
+  it('should list workflow runs with filters', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ runs: [], has_more: false, limit: 50, offset: 0 }));
+
+    const result = await client.workflowRuns.list({ workflowId: 'wf-1', limit: 10 });
+
+    expect(result.has_more).toBe(false);
+    const url = mockFetch.mock.calls[0][0] as string;
+    expect(url).toContain('/workflow-runs');
+    expect(url).toContain('workflow_id=wf-1'); // camelCase -> snake_case query param
+    expect(url).toContain('limit=10');
+  });
+
+  it('should get a workflow run detail by run_pk', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse({ id: 'pk-1', run_id: 'r1', status: 'completed' }));
+
+    const result = await client.workflowRuns.get('pk-1');
+
+    expect(result.id).toBe('pk-1');
+    expect(mockFetch.mock.calls[0][0]).toContain('/workflow-runs/pk-1');
   });
 });

@@ -10,9 +10,9 @@ Official JavaScript/TypeScript SDK for the [ModuleX](https://modulex.dev) AI wor
 - Zero runtime dependencies
 - Full TypeScript support with exported types
 - Dual ESM + CommonJS build
-- SSE streaming for real-time workflow events
+- SSE streaming for workflows, executions, composer, and assistant (incl. HITL)
 - Automatic retries with exponential backoff
-- 122 API endpoints covered
+- 130 API endpoints across 17 resource groups
 
 ## Installation
 
@@ -143,7 +143,22 @@ await client.executions.resume({
 await client.executions.cancel(run.run_id, { reason: 'No longer needed' });
 ```
 
+### Workflow Run History (durable)
+
+```typescript
+// List persisted runs (newest first; cursor-style has_more pagination)
+const { runs, has_more } = await client.workflowRuns.list({ workflowId: 'workflow-uuid', limit: 20 });
+
+// Full run detail — pass the run's table id (run.id), NOT the string run_id
+const detail = await client.workflowRuns.get(runs[0].id);
+```
+
 ### SSE Streaming
+
+Workflow/composer/assistant streams are **data-only** — discriminate on `event.type`
+(not `event.event`, which is always `"message"`). Some frames are flat
+(`node_update`/`node_started`/`error`) and some are wrapped under `data`
+(`metadata`/`done`/`interrupt`/`resumed`/`cancelled`).
 
 ```typescript
 const run = await client.executions.run({
@@ -153,15 +168,15 @@ const run = await client.executions.run({
 });
 
 for await (const event of client.executions.listen(run.run_id)) {
-  switch (event.event) {
+  switch (event.type) {
     case 'node_update':
-      console.log(`Node ${event.data.node_id}: ${event.data.status}`);
+      console.log(`Node ${event.node} (${event.name})`, event.output); // flat
       break;
     case 'done':
-      console.log(`Completed in ${event.data.total_execution_time_ms}ms`);
+      console.log(event.data.message); // wrapped
       break;
     case 'error':
-      console.error(event.data.error_message);
+      console.error(event.message); // flat
       break;
   }
 }
@@ -224,14 +239,6 @@ await client.schedules.pause(schedule.id);
 await client.schedules.resume(schedule.id);
 ```
 
-### Templates
-
-```typescript
-const templates = await client.templates.list();
-const template = await client.templates.get('template-uuid');
-const used = await client.templates.use('template-uuid');
-```
-
 ### Deployments
 
 ```typescript
@@ -250,10 +257,39 @@ const session = await client.composer.chat({
 });
 
 for await (const event of client.composer.listen(session.composer_chat_id, session.run_id)) {
-  console.log(event.event, event.data);
+  if (event.type === 'user_input_request') {
+    // Human-in-the-loop: the agent is asking a structured question.
+    const q = event.data; // UserInputRequest (discriminated on `kind`)
+    await client.composer.resume(session.composer_chat_id, {
+      requestId: q.request_id,
+      response: { kind: 'yes_no', answer: true },
+      llm: { integration_name: 'openai', provider_id: 'openai', model_id: 'gpt-4o-mini' },
+    });
+  }
 }
 
-await client.composer.save(session.composer_chat_id);
+// Save returns a workflow_sync payload for refreshing the canvas
+const saved = await client.composer.save(session.composer_chat_id);
+```
+
+### Assistant (HITL chat agent)
+
+```typescript
+// A general chat agent with the same HITL flow as Composer, not bound to a workflow.
+const chat = await client.assistant.chat({ message: 'Help me set up a GitHub integration' });
+
+for await (const event of client.assistant.listen(chat.chat_id, chat.run_id)) {
+  if (event.type === 'response_chunk') process.stdout.write(String(event.delta ?? ''));
+  if (event.type === 'user_input_request') {
+    await client.assistant.resume(chat.chat_id, {
+      requestId: event.data.request_id,
+      response: { kind: 'skipped' },
+      llm: { integration_name: 'openai', provider_id: 'openai', model_id: 'gpt-4o-mini' },
+    });
+  }
+}
+
+const { items } = await client.assistant.list({ limit: 20 });
 ```
 
 ### Dashboard & Analytics
@@ -264,20 +300,26 @@ const overview = await client.dashboard.analyticsOverview();
 const users = await client.dashboard.users({ search: 'john' });
 ```
 
-### Subscriptions
-
-```typescript
-const plans = await client.subscriptions.organizationPlans();
-const billing = await client.subscriptions.billing();
-const checkout = await client.subscriptions.checkoutLink({ planId: 'plan-uuid', interval: 'month' });
-```
-
 ### System
 
 ```typescript
-const health = await client.system.health();
-const timezones = await client.system.timezones();
+// Timezone utilities (e.g. for building a schedule timezone picker)
+const { popular, all_timezones } = await client.system.timezones();
+const matches = await client.system.searchTimezones('Istanbul');
 ```
+
+## Real-time collaboration (WebSocket)
+
+ModuleX also runs a Socket.IO server (`modulex-ws`) for live multi-user workflow
+collaboration — cursors, node locks, JSON-patch sync, and presence. **This is
+intentionally out of scope for this SDK.** It uses a different transport
+(Socket.IO, not REST/SSE), a different auth model (Clerk browser JWT, not the
+`mx_live_` api key), and a camelCase wire format incompatible with this client's
+snake_case conventions. If you need realtime collaboration, connect with a
+`socket.io-client` directly; a dedicated `@modulex/realtime` package may be
+provided in the future. This SDK covers the REST API and its SSE execution
+streams (`executions.listen`, `workflows.listenChanges`, `composer.listen`,
+`assistant.listen`).
 
 ## Error Handling
 
@@ -296,7 +338,9 @@ try {
   if (error instanceof NotFoundError) {
     console.log('Workflow not found');
   } else if (error instanceof RateLimitError) {
-    console.log(`Rate limited. Retry after ${error.retryAfter}s`);
+    // Rate-limit + billing errors expose structured fields parsed from the envelope
+    console.log(`Rate limited (${error.code}): ${error.reason}. Retry after ${error.retryAfter}s`);
+    console.log(`limit=${error.limit} remaining=${error.remaining} reset=${error.reset}`);
   } else if (error instanceof AuthenticationError) {
     console.log('Invalid API key');
   } else if (error instanceof ValidationError) {
@@ -304,6 +348,10 @@ try {
   }
 }
 ```
+
+All `ModulexError` subclasses expose `.code`, `.reason`, and `.layer` when the API
+returns a structured error envelope (e.g. billing/rate-limit denials), in addition
+to `.status`, `.body`, and `.headers`.
 
 The SDK automatically retries requests on transient errors (429, 500, 502, 503) with exponential backoff.
 

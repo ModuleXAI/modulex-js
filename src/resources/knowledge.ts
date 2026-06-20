@@ -7,12 +7,10 @@ import { BaseResource } from '../base';
 import type { RequestOptions } from '../types';
 import type {
   KnowledgeBaseListParams,
-  KnowledgeBaseListResponse,
   CreateKnowledgeBaseParams,
   UpdateKnowledgeBaseParams,
   KnowledgeBaseResponse,
   KnowledgeBaseStatsResponse,
-  SuccessResponse,
   DocumentListParams,
   UploadDocumentParams,
   DocumentResponse,
@@ -36,12 +34,15 @@ export class Knowledge extends BaseResource {
    * GET /knowledge-bases
    *
    * Lists knowledge bases for the current organization.
+   *
+   * The backend returns a bare JSON array (no pagination envelope); the
+   * `limit`/`offset`/`status` query params control which records are returned.
    */
   async list(
     params?: KnowledgeBaseListParams,
     options?: RequestOptions,
-  ): Promise<KnowledgeBaseListResponse> {
-    return this._get<KnowledgeBaseListResponse>('/knowledge-bases', {
+  ): Promise<KnowledgeBaseResponse[]> {
+    return this._get<KnowledgeBaseResponse[]>('/knowledge-bases', {
       ...options,
       params: {
         ...options?.params,
@@ -56,6 +57,8 @@ export class Knowledge extends BaseResource {
    * POST /knowledge-bases
    *
    * Creates a new knowledge base.
+   *
+   * Requires an organization admin or owner role; non-admin keys receive 403.
    */
   async create(
     params: CreateKnowledgeBaseParams,
@@ -92,6 +95,8 @@ export class Knowledge extends BaseResource {
    * PUT /knowledge-bases/{kbId}
    *
    * Updates a knowledge base's name, description, or configuration.
+   *
+   * Requires an organization admin or owner role; non-admin keys receive 403.
    */
   async update(
     knowledgeBaseId: string,
@@ -110,6 +115,8 @@ export class Knowledge extends BaseResource {
    *
    * Deletes a knowledge base. Pass `deleteFiles: true` to also remove
    * the underlying stored files.
+   *
+   * Requires an organization admin or owner role; non-admin keys receive 403.
    */
   async delete(
     knowledgeBaseId: string,
@@ -133,12 +140,15 @@ export class Knowledge extends BaseResource {
    * POST /knowledge-bases/{kbId}/archive
    *
    * Archives a knowledge base, pausing ingestion without deleting data.
+   * Returns the updated knowledge base record.
+   *
+   * Requires an organization admin or owner role; non-admin keys receive 403.
    */
   async archive(
     knowledgeBaseId: string,
     options?: RequestOptions,
-  ): Promise<SuccessResponse> {
-    return this._post<SuccessResponse>(
+  ): Promise<KnowledgeBaseResponse> {
+    return this._post<KnowledgeBaseResponse>(
       `/knowledge-bases/${knowledgeBaseId}/archive`,
       undefined,
       options,
@@ -149,13 +159,16 @@ export class Knowledge extends BaseResource {
    * GET /knowledge-bases/{kbId}/documents
    *
    * Returns documents within a knowledge base.
+   *
+   * The backend returns a bare JSON array; the `limit`/`offset`/`status`
+   * query params control which records are returned.
    */
   async documents(
     knowledgeBaseId: string,
     params?: DocumentListParams,
     options?: RequestOptions,
-  ): Promise<Record<string, unknown>> {
-    return this._get<Record<string, unknown>>(
+  ): Promise<DocumentResponse[]> {
+    return this._get<DocumentResponse[]>(
       `/knowledge-bases/${knowledgeBaseId}/documents`,
       {
         ...options,
@@ -174,6 +187,8 @@ export class Knowledge extends BaseResource {
    *
    * Uploads a document file to a knowledge base for ingestion.
    * Builds a `FormData` with the file and optional metadata JSON.
+   *
+   * Requires an organization admin or owner role; non-admin keys receive 403.
    */
   async uploadDocument(
     knowledgeBaseId: string,
@@ -211,7 +226,8 @@ export class Knowledge extends BaseResource {
   /**
    * GET /knowledge-bases/{kbId}/documents/{docId}/status
    *
-   * Returns the processing status and progress of a document.
+   * Returns the processing status of a document. Some fields are conditional
+   * on the document's `status` value.
    */
   async documentStatus(
     knowledgeBaseId: string,
@@ -229,6 +245,8 @@ export class Knowledge extends BaseResource {
    *
    * Deletes a document and its chunks from the knowledge base.
    * Pass `deleteFile: true` to also remove the source file from storage.
+   *
+   * Requires an organization admin or owner role; non-admin keys receive 403.
    */
   async deleteDocument(
     knowledgeBaseId: string,
@@ -252,14 +270,16 @@ export class Knowledge extends BaseResource {
   /**
    * POST /knowledge-bases/{kbId}/documents/{docId}/retry
    *
-   * Retries ingestion of a failed document.
+   * Retries ingestion of a failed document. Returns the updated document record.
+   *
+   * Requires an organization admin or owner role; non-admin keys receive 403.
    */
   async retryDocument(
     knowledgeBaseId: string,
     documentId: string,
     options?: RequestOptions,
-  ): Promise<Record<string, unknown>> {
-    return this._post<Record<string, unknown>>(
+  ): Promise<DocumentResponse> {
+    return this._post<DocumentResponse>(
       `/knowledge-bases/${knowledgeBaseId}/documents/${documentId}/retry`,
       undefined,
       options,

@@ -11,11 +11,13 @@ import type {
   ScheduleListParams,
   ScheduleResponse,
   ScheduleListResponse,
-  SuccessResponse,
   ScheduleRunListParams,
+  ScheduleRunListResponse,
   ScheduleRunStatsParams,
   ScheduleRunStatsResponse,
   ScheduleRunResponse,
+  RetryRunResponse,
+  DeleteScheduleResponse,
 } from '../types';
 
 /**
@@ -82,8 +84,11 @@ export class Schedules extends BaseResource {
    *
    * Deletes a schedule and cancels all pending executions.
    */
-  async delete(scheduleId: string, options?: RequestOptions): Promise<SuccessResponse> {
-    return this._delete<SuccessResponse>(
+  async delete(
+    scheduleId: string,
+    options?: RequestOptions,
+  ): Promise<DeleteScheduleResponse> {
+    return this._delete<DeleteScheduleResponse>(
       `/schedules/${scheduleId}`,
       undefined,
       options,
@@ -94,9 +99,10 @@ export class Schedules extends BaseResource {
    * POST /schedules/{scheduleId}/pause
    *
    * Pauses a schedule, preventing future runs until resumed.
+   * Returns the updated schedule.
    */
-  async pause(scheduleId: string, options?: RequestOptions): Promise<SuccessResponse> {
-    return this._post<SuccessResponse>(
+  async pause(scheduleId: string, options?: RequestOptions): Promise<ScheduleResponse> {
+    return this._post<ScheduleResponse>(
       `/schedules/${scheduleId}/pause`,
       undefined,
       options,
@@ -106,10 +112,10 @@ export class Schedules extends BaseResource {
   /**
    * POST /schedules/{scheduleId}/resume
    *
-   * Resumes a paused schedule.
+   * Resumes a paused schedule. Returns the updated schedule.
    */
-  async resume(scheduleId: string, options?: RequestOptions): Promise<SuccessResponse> {
-    return this._post<SuccessResponse>(
+  async resume(scheduleId: string, options?: RequestOptions): Promise<ScheduleResponse> {
+    return this._post<ScheduleResponse>(
       `/schedules/${scheduleId}/resume`,
       undefined,
       options,
@@ -125,8 +131,8 @@ export class Schedules extends BaseResource {
     scheduleId: string,
     params?: ScheduleRunListParams,
     options?: RequestOptions,
-  ): Promise<Record<string, unknown>> {
-    return this._get<Record<string, unknown>>(`/schedules/${scheduleId}/runs`, {
+  ): Promise<ScheduleRunListResponse> {
+    return this._get<ScheduleRunListResponse>(`/schedules/${scheduleId}/runs`, {
       ...options,
       params: {
         ...options?.params,
@@ -184,8 +190,8 @@ export class Schedules extends BaseResource {
     scheduleId: string,
     runId: string,
     options?: RequestOptions,
-  ): Promise<Record<string, unknown>> {
-    return this._post<Record<string, unknown>>(
+  ): Promise<RetryRunResponse> {
+    return this._post<RetryRunResponse>(
       `/schedules/${scheduleId}/runs/${runId}/retry`,
       undefined,
       options,

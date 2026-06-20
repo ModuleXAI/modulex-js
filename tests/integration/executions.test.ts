@@ -33,22 +33,10 @@ describe.skipIf(MISSING_ENV)('Executions', () => {
     }
   });
 
-  it('POST /workflows/run — direct LLM call', async () => {
-    const res = await tracked('POST', '/workflows/run (direct LLM)', () =>
-      client.executions.run({
-        llm: {
-          integration_name: 'openai',
-          provider_id: 'openai',
-          model_id: 'gpt-4o-mini',
-          temperature: 0.1,
-        },
-        input: { messages: [{ role: 'user', content: 'Say "SDK test OK" and nothing else.' }] },
-        stream: false,
-        ephemeral: true,
-      }),
-    );
-    if (!res.run_id) throw new Error('Missing run_id');
-  });
+  // NOTE: the legacy direct-LLM run mode (`llm`-only request) was removed from
+  // the backend — `POST /workflows/run` now returns HTTP 410 for an
+  // llm_config-only request. Use `client.assistant.chat()` instead. The former
+  // "direct LLM call" integration test has been dropped accordingly.
 
   it('GET /workflows/state/{threadId}', async () => {
     if (!threadId) {

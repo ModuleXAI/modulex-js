@@ -8,6 +8,20 @@ function jsonResponse(data: unknown, status = 200) {
   });
 }
 
+function sseResponse(events: string) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(events));
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+  });
+}
+
 describe('Workflows Resource', () => {
   let mockFetch: ReturnType<typeof vi.fn>;
   let client: Modulex;
@@ -105,12 +119,38 @@ describe('Workflows Resource', () => {
   });
 
   it('should get builder details', async () => {
-    mockFetch.mockResolvedValueOnce(jsonResponse({ node_types: {}, categories: {}, counts: {}, cached: true }));
+    mockFetch.mockResolvedValueOnce(jsonResponse({
+      node_types: {},
+      categories: { tools: [], functions: [], transformers: [] },
+      counts: { integrations: 0, functions: 0, transformers: 0, providers: 0 },
+      features: { array_spread: true },
+      cached: true,
+    }));
 
     const result = await client.workflows.builderDetails({ nodeType: 'llm' });
 
     expect(result.cached).toBe(true);
+    expect(result.categories.tools).toEqual([]);
+    expect(result.features?.array_spread).toBe(true);
     const url = new URL(mockFetch.mock.calls[0][0]);
     expect(url.searchParams.get('node_type')).toBe('llm');
+  });
+
+  it('should stream workflow changes (data-only, discriminated on type)', async () => {
+    mockFetch.mockResolvedValueOnce(sseResponse(
+      'data: {"type":"connected","workflow_id":"wf-1","edit_version":3}\n\n' +
+      'data: {"type":"user_joined","user_id":"u-2"}\n\n',
+    ));
+
+    const events: any[] = [];
+    for await (const evt of client.workflows.listenChanges('wf-1')) {
+      events.push(evt);
+    }
+
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe('connected');
+    expect(events[0].edit_version).toBe(3);
+    expect(events[1].type).toBe('user_joined');
+    expect(mockFetch.mock.calls[0][0]).toContain('/workflows/wf-1/changes');
   });
 });

@@ -197,4 +197,59 @@ describe('SSE Parser', () => {
 
     expect(events[0].data).toEqual({ spaced: true });
   });
+
+  describe('semantic type discriminant', () => {
+    it('resolves type from data.type for data-only frames (workflows/composer/assistant/credentials)', async () => {
+      const response = createMockResponse([
+        'data: {"type":"node_started","node_id":"llm_1"}\n\n',
+      ]);
+
+      const events = [];
+      for await (const event of parseSSEStream(response)) {
+        events.push(event);
+      }
+
+      // event field stays "message" (data-only frame), but type surfaces the real discriminant
+      expect(events[0].event).toBe('message');
+      expect(events[0].type).toBe('node_started');
+    });
+
+    it('falls back to the event field when data carries no type (chats stream)', async () => {
+      const response = createMockResponse([
+        'event: message_delta\ndata: {"content":"hi"}\n\n',
+      ]);
+
+      const events = [];
+      for await (const event of parseSSEStream(response)) {
+        events.push(event);
+      }
+
+      expect(events[0].event).toBe('message_delta');
+      expect(events[0].type).toBe('message_delta');
+    });
+
+    it('prefers data.type over the event field when both are present', async () => {
+      const response = createMockResponse([
+        'event: message\ndata: {"type":"done","steps_executed":3}\n\n',
+      ]);
+
+      const events = [];
+      for await (const event of parseSSEStream(response)) {
+        events.push(event);
+      }
+
+      expect(events[0].type).toBe('done');
+    });
+
+    it('defaults type to "message" when neither event nor data.type is present', async () => {
+      const response = createMockResponse(['data: {"foo":1}\n\n']);
+
+      const events = [];
+      for await (const event of parseSSEStream(response)) {
+        events.push(event);
+      }
+
+      expect(events[0].type).toBe('message');
+    });
+  });
 });

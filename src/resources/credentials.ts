@@ -11,6 +11,7 @@ import type {
   CredentialListGrouped,
   CredentialListFlat,
   CredentialResponse,
+  CredentialDetailResponse,
   CreateCredentialParams,
   UpdateCredentialParams,
   TestTemporaryParams,
@@ -19,9 +20,13 @@ import type {
   CredentialUsageParams,
   CredentialUsageResponse,
   CredentialAuditParams,
+  AuditLogResponse,
   McpServerParams,
+  MCPServerCredentialResponse,
   McpToolsResponse,
   RefreshDiscoveryResponse,
+  InitiateOAuth2Params,
+  OAuth2InitiateResponse,
 } from '../types';
 
 /**
@@ -54,14 +59,15 @@ export class Credentials extends BaseResource {
   /**
    * GET /credentials/{credentialId}
    *
-   * Returns a single credential record.
+   * Returns a single credential record, including ownership and (optionally
+   * masked) auth detail fields not present on the list endpoint.
    */
   async get(
     credentialId: string,
     params?: { includeMasked?: boolean },
     options?: RequestOptions,
-  ): Promise<CredentialResponse> {
-    return this._get<CredentialResponse>(`/credentials/${credentialId}`, {
+  ): Promise<CredentialDetailResponse> {
+    return this._get<CredentialDetailResponse>(`/credentials/${credentialId}`, {
       ...options,
       params: {
         ...options?.params,
@@ -74,6 +80,8 @@ export class Credentials extends BaseResource {
    * POST /credentials
    *
    * Creates a new credential. The auth data is encrypted at rest.
+   *
+   * @remarks Requires admin/owner role on the organization.
    */
   async create(
     params: CreateCredentialParams,
@@ -157,6 +165,8 @@ export class Credentials extends BaseResource {
    * GET /credentials/{credentialId}/usage
    *
    * Returns usage statistics for a credential.
+   *
+   * @remarks Requires admin/owner role on the organization.
    */
   async usage(
     credentialId: string,
@@ -176,14 +186,16 @@ export class Credentials extends BaseResource {
   /**
    * GET /credentials/{credentialId}/audit
    *
-   * Returns the audit log for a credential.
+   * Returns the audit log for a credential as an array of entries.
+   *
+   * @remarks Requires admin/owner role on the organization.
    */
   async audit(
     credentialId: string,
     params?: CredentialAuditParams,
     options?: RequestOptions,
-  ): Promise<Record<string, unknown>> {
-    return this._get<Record<string, unknown>>(`/credentials/${credentialId}/audit`, {
+  ): Promise<AuditLogResponse[]> {
+    return this._get<AuditLogResponse[]>(`/credentials/${credentialId}/audit`, {
       ...options,
       params: {
         ...options?.params,
@@ -196,7 +208,10 @@ export class Credentials extends BaseResource {
   /**
    * POST /credentials/bulk-modulex-keys/stream — SSE
    *
-   * Streams bulk ModuleX managed key provisioning events.
+   * Streams bulk ModuleX managed key provisioning events. Each event's
+   * `data` field can be parsed as a {@link ModulexKeyBulkEventData}.
+   *
+   * @remarks Requires admin/owner role on the organization.
    */
   bulkModulexKeys(options?: RequestOptions): AsyncGenerator<SSEEvent> {
     return this.streamSSEPost('/credentials/bulk-modulex-keys/stream', undefined, options);
@@ -210,8 +225,12 @@ export class Credentials extends BaseResource {
   async mcpServer(
     params: McpServerParams,
     options?: RequestOptions,
-  ): Promise<CredentialResponse> {
-    return this._post<CredentialResponse>('/credentials/mcp-server', params, options);
+  ): Promise<MCPServerCredentialResponse> {
+    return this._post<MCPServerCredentialResponse>(
+      '/credentials/mcp-server',
+      params,
+      options,
+    );
   }
 
   /**
@@ -241,6 +260,45 @@ export class Credentials extends BaseResource {
   ): Promise<McpToolsResponse> {
     return this._get<McpToolsResponse>(
       `/credentials/${credentialId}/mcp-tools`,
+      options,
+    );
+  }
+
+  /**
+   * POST /credentials/oauth2/initiate
+   *
+   * Initiates an OAuth2 authorization flow for an integration and returns the
+   * authorization URL the user should be redirected to, along with a `state`
+   * token correlating the flow.
+   *
+   * @remarks Requires admin/owner role on the organization.
+   */
+  async initiateOAuth2(
+    params: InitiateOAuth2Params,
+    options?: RequestOptions,
+  ): Promise<OAuth2InitiateResponse> {
+    return this._post<OAuth2InitiateResponse>(
+      '/credentials/oauth2/initiate',
+      params,
+      options,
+    );
+  }
+
+  /**
+   * POST /credentials/{credentialId}/oauth2/refresh
+   *
+   * Manually refreshes the access token of an existing OAuth2 credential and
+   * returns the updated credential record.
+   *
+   * @remarks Requires admin/owner role on the organization.
+   */
+  async refreshOAuth2(
+    credentialId: string,
+    options?: RequestOptions,
+  ): Promise<CredentialResponse> {
+    return this._post<CredentialResponse>(
+      `/credentials/${credentialId}/oauth2/refresh`,
+      undefined,
       options,
     );
   }

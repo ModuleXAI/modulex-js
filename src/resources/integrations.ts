@@ -8,6 +8,7 @@ import type { RequestOptions } from '../types';
 import type {
   BrowseParams,
   BrowseResponse,
+  IntegrationMetadata,
   ToolIntegrationResponse,
   LLMProviderResponse,
   KnowledgeProviderResponse,
@@ -51,8 +52,8 @@ export class Integrations extends BaseResource {
   async tools(
     params?: { category?: string },
     options?: RequestOptions,
-  ): Promise<Record<string, unknown>> {
-    return this._get<Record<string, unknown>>('/integrations/tools', {
+  ): Promise<IntegrationMetadata[]> {
+    return this._get<IntegrationMetadata[]>('/integrations/tools', {
       ...options,
       params: { ...options?.params, category: params?.category },
     });
@@ -68,7 +69,7 @@ export class Integrations extends BaseResource {
     options?: RequestOptions,
   ): Promise<ToolIntegrationResponse> {
     return this._get<ToolIntegrationResponse>(
-      `/integrations/tools/${integrationName}`,
+      `/integrations/tools/${encodeURIComponent(integrationName)}`,
       options,
     );
   }
@@ -81,8 +82,8 @@ export class Integrations extends BaseResource {
   async llmProviders(
     params?: { category?: string },
     options?: RequestOptions,
-  ): Promise<Record<string, unknown>> {
-    return this._get<Record<string, unknown>>('/integrations/llm-providers', {
+  ): Promise<IntegrationMetadata[]> {
+    return this._get<IntegrationMetadata[]>('/integrations/llm-providers', {
       ...options,
       params: { ...options?.params, category: params?.category },
     });
@@ -98,7 +99,7 @@ export class Integrations extends BaseResource {
     options?: RequestOptions,
   ): Promise<LLMProviderResponse> {
     return this._get<LLMProviderResponse>(
-      `/integrations/llm-providers/${providerName}`,
+      `/integrations/llm-providers/${encodeURIComponent(providerName)}`,
       options,
     );
   }
@@ -111,8 +112,8 @@ export class Integrations extends BaseResource {
   async knowledgeProviders(
     params?: { category?: string },
     options?: RequestOptions,
-  ): Promise<Record<string, unknown>> {
-    return this._get<Record<string, unknown>>('/integrations/knowledge-providers', {
+  ): Promise<IntegrationMetadata[]> {
+    return this._get<IntegrationMetadata[]>('/integrations/knowledge-providers', {
       ...options,
       params: { ...options?.params, category: params?.category },
     });
@@ -128,7 +129,7 @@ export class Integrations extends BaseResource {
     options?: RequestOptions,
   ): Promise<KnowledgeProviderResponse> {
     return this._get<KnowledgeProviderResponse>(
-      `/integrations/knowledge-providers/${providerName}`,
+      `/integrations/knowledge-providers/${encodeURIComponent(providerName)}`,
       options,
     );
   }
@@ -143,7 +144,7 @@ export class Integrations extends BaseResource {
     options?: RequestOptions,
   ): Promise<IntegrationResponse> {
     return this._get<IntegrationResponse>(
-      `/integrations/${integrationName}`,
+      `/integrations/${encodeURIComponent(integrationName)}`,
       options,
     );
   }

@@ -12,14 +12,17 @@
  */
 export interface ChatResponse {
   id: string;
-  title: string | null;
-  creator_id: string;
+  /** Chat title — always present (backend `str`, non-nullable). */
+  title: string;
+  /** Creator user ID — nullable for system/org-owned chats. */
+  creator_id: string | null;
   is_private: boolean;
   /** ID of the currently in-progress run attached to this chat, if any. */
   running_id: string | null;
   created_at: string;
   updated_at: string;
-  organization_id?: string | null;
+  /** Owning organization ID — always present. */
+  organization_id: string;
   /** Messages are included when fetching a single chat with messages embedded. */
   messages?: ChatMessageResponse[];
   deleted_at?: string | null;
@@ -31,8 +34,12 @@ export interface ChatResponse {
 
 /**
  * The role of a participant in a chat message.
+ *
+ * Common values are `'human'`, `'ai'`, and `'system'`, but the backend stores
+ * the role as a free-form string (e.g. `'assistant'` may also appear), so any
+ * string is accepted while preserving autocomplete for the common values.
  */
-export type ChatMessageRole = 'human' | 'ai' | 'system';
+export type ChatMessageRole = 'human' | 'ai' | 'system' | (string & {});
 
 /**
  * A single message within a chat session.
@@ -50,6 +57,8 @@ export interface ChatMessageResponse {
   running_status?: string | null;
   created_at: string;
   updated_at: string;
+  /** Soft-deletion timestamp, if the message has been deleted. */
+  deleted_at?: string | null;
 }
 
 /**
@@ -62,15 +71,15 @@ export interface ChatMessagesParams {
 
 /**
  * Paginated list of messages within a chat.
+ *
+ * Mirrors the backend `MessageListResponse`, which returns only the page of
+ * messages plus the echoed `limit`/`offset`. The `limit` is nullable because
+ * the backend leaves it unset when no limit was applied.
  */
 export interface ChatMessagesResponse {
   messages: ChatMessageResponse[];
-  total: number;
-  limit: number;
+  limit: number | null;
   offset: number;
-  has_next: boolean;
-  /** The number of messages actually returned (may differ from `limit` on the last page). */
-  actual_count: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +91,7 @@ export interface ChatMessagesResponse {
  */
 export interface UpdateChatParams {
   title?: string;
-  isPrivate?: boolean;
+  is_private?: boolean;
   /** Move the chat to a named folder (e.g. `"pinned"`, `"archived"`, or a custom name). */
   folder?: string;
 }
@@ -90,6 +99,22 @@ export interface UpdateChatParams {
 // ---------------------------------------------------------------------------
 // Chat list
 // ---------------------------------------------------------------------------
+
+/**
+ * A lightweight chat row as returned by the grouped list endpoint. Unlike
+ * {@link ChatResponse}, list rows do NOT include `organization_id`, `messages`,
+ * or `deleted_at`.
+ */
+export interface ChatListItem {
+  id: string;
+  title: string;
+  /** Creator user ID — nullable for system/org-owned chats. */
+  creator_id: string | null;
+  is_private: boolean;
+  running_id: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 /**
  * Grouped chat list response.
@@ -103,17 +128,39 @@ export interface UpdateChatParams {
  * const pinned = list['pinned'] ?? [];
  * ```
  */
-export type ChatListResponse = Record<string, ChatResponse[]>;
+export type ChatListResponse = Record<string, ChatListItem[]>;
 
 // ---------------------------------------------------------------------------
 // Chat SSE events
 // ---------------------------------------------------------------------------
 
 /**
- * SSE event emitted over the chat list stream when the user's chat list changes.
+ * Payload of the initial `connected` SSE event sent when the stream opens.
  */
-export interface ChatStreamEvent {
-  /** Event type identifier (e.g. `"chat_created"`, `"chat_updated"`, `"chat_deleted"`). */
-  event: string;
-  data: ChatResponse | ChatListResponse | { chat_id: string };
+export interface ChatConnectedEvent {
+  status: 'connected';
+  /** ISO-8601 timestamp of when the connection was established. */
+  timestamp: string;
 }
+
+/**
+ * Payload of a `chat_list_updated` SSE event, emitted when the user's chat list
+ * changes and should be re-fetched via `GET /chats`.
+ */
+export interface ChatListUpdatedEvent {
+  event: 'chat_list_updated';
+  /**
+   * Scope of the change: `"public"` affects all org users, `"private"` affects
+   * only the current user.
+   */
+  type: 'public' | 'private';
+  /** ISO-8601 timestamp of when the change occurred. */
+  timestamp: string;
+}
+
+/**
+ * Union of the JSON payloads carried by the chat list SSE stream
+ * (`GET /chats/stream`). `: keepalive` comment lines carry no JSON payload and
+ * are not represented here.
+ */
+export type ChatStreamEvent = ChatConnectedEvent | ChatListUpdatedEvent;

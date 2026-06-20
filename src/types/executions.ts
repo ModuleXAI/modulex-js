@@ -3,7 +3,7 @@
  * @module types/executions
  */
 
-import type { LLMConfig, WorkflowDefinition } from './workflows';
+import type { WorkflowDefinition } from './workflows';
 
 // ---------------------------------------------------------------------------
 // Run params & response
@@ -11,19 +11,29 @@ import type { LLMConfig, WorkflowDefinition } from './workflows';
 
 /**
  * Parameters for triggering a workflow run.
+ *
+ * Two run modes are supported:
+ * - `workflowId` — run a previously saved workflow (requires an active deployment;
+ *   the backend returns 400 if the workflow has not been deployed).
+ * - `workflow` — run an inline, ad-hoc definition without saving it.
+ *
+ * The legacy `llm`-only and `systemWorkflow` modes were removed from the backend
+ * (the run endpoint now returns HTTP 410 for an `llm_config`-only request — use
+ * `client.assistant.chat()` instead).
  */
 export interface WorkflowRunParams {
-  /** ID of a previously saved workflow to run. Mutually exclusive with `workflow`. */
+  /** ID of a previously saved workflow to run. Mutually exclusive with `workflow`. Requires an active deployment. */
   workflowId?: string;
-  /** An inline workflow definition to run without saving. */
+  /** An inline workflow definition to run without saving. Mutually exclusive with `workflowId`. */
   workflow?: WorkflowDefinition;
-  /** Override the LLM used by the run. */
-  llm?: LLMConfig;
-  /** Name of a system-level workflow to run (e.g. `"workflow_name"`). */
-  systemWorkflow?: string;
+  /** For ad-hoc (inline) runs, the saved workflow to attribute this run to in run history. */
+  attributionWorkflowId?: string;
   /** State input values passed to the workflow's entry node. */
   input?: Record<string, unknown>;
-  /** Runtime config overrides for this execution. */
+  /**
+   * Runtime config overrides for this execution. Recognised keys include
+   * `thread_id`, `recursion_limit`, and `batch_interval_ms`.
+   */
   config?: Record<string, unknown>;
   /** Whether to open an SSE stream for real-time events. */
   stream?: boolean;
@@ -31,16 +41,34 @@ export interface WorkflowRunParams {
   ephemeral?: boolean;
   /** If `true`, the run and its messages are only visible to the creator. */
   isPrivate?: boolean;
-  /** Knowledge base retrieval config for this run. */
-  knowledgeConfig?: Record<string, unknown>;
-  organizationId?: string;
+}
+
+/**
+ * A persisted workflow message envelope (human or AI message) returned inline
+ * by a synchronous run.
+ */
+export interface WorkflowMessageEnvelope {
+  id: string;
+  chat_id: string | null;
+  role: string;
+  content: unknown;
+  workflow: Record<string, unknown> | null;
+  run_id: string;
+  running_status: string;
+  created_at: string;
+  updated_at: string;
+  deleted_at: string | null;
 }
 
 /**
  * Response from initiating a workflow run.
  */
 export interface WorkflowRunResponse {
-  /** Terminal or intermediate status (e.g. `"completed"`, `"running"`, `"interrupted"`). */
+  /**
+   * The status of the synchronous portion. For a streaming/async run this is
+   * always `"running"`; terminal statuses are observed via `listen()` or the
+   * run-history endpoints, not here.
+   */
   status: string;
   run_id: string;
   thread_id: string;
@@ -49,12 +77,12 @@ export interface WorkflowRunResponse {
   stream: boolean;
   workflow_name: string;
   workflow_version: string;
-  /** `"saved"` | `"inline"` | `"deployment"` */
-  workflow_source: string;
+  /** Origin of the executed definition: `"database"`, `"request"`, or `"system:<name>"`. */
+  workflow_source: 'database' | 'request' | `system:${string}`;
   /** Wall-clock duration of the synchronous portion in milliseconds. */
   elapsed_ms: number;
-  human_message?: Record<string, unknown> | null;
-  ai_message?: Record<string, unknown> | null;
+  human_message?: WorkflowMessageEnvelope | null;
+  ai_message?: WorkflowMessageEnvelope | null;
   message: string;
 }
 
@@ -67,7 +95,8 @@ export interface WorkflowRunResponse {
  */
 export interface WorkflowStateResponse {
   thread_id: string;
-  run_id: string;
+  /** The originating run ID, read from checkpoint metadata — may be null. */
+  run_id: string | null;
   checkpoint_id: string;
   /** The full LangGraph state object. */
   state: Record<string, unknown>;
@@ -75,7 +104,7 @@ export interface WorkflowStateResponse {
   next: string[];
   /** LangGraph metadata blob. */
   metadata: Record<string, unknown>;
-  /** Number of writes pending flush to the checkpoint store. */
+  /** Count of pending writes not yet flushed to the checkpoint store. */
   pending_writes: number;
 }
 
@@ -99,7 +128,6 @@ export interface WorkflowResumeParams {
   runId: string;
   /** Whether to open an SSE stream for the resumed execution. */
   stream?: boolean;
-  organizationId?: string;
 }
 
 /**
@@ -110,7 +138,7 @@ export interface WorkflowResumeResponse {
   run_id: string;
   thread_id: string;
   stream: boolean;
-  workflow_source: string;
+  workflow_source: 'database' | 'request' | `system:${string}`;
   message: string;
 }
 
@@ -122,7 +150,8 @@ export interface WorkflowResumeResponse {
  * Response from cancelling an in-progress workflow run.
  */
 export interface CancelResponse {
-  status: string;
+  /** The backend returns the literal `"cancellation_requested"` on success. */
+  status: 'cancellation_requested' | string;
   run_id: string;
   reason: string;
   message: string;
@@ -130,74 +159,75 @@ export interface CancelResponse {
 
 // ---------------------------------------------------------------------------
 // SSE event data shapes
+//
+// IMPORTANT: workflow execution streams are data-only (no `event:` line); the
+// discriminant lives in `data.type`. The backend is also inconsistent about
+// envelopes: metadata/interrupt/resumed/done/cancelled are WRAPPED
+// (`{ type, data: {...} }`), while node_started/node_update/error are FLAT
+// (`{ type, ...fields }`). The union below models both shapes exactly.
 // ---------------------------------------------------------------------------
 
-/**
- * Data payload for the `metadata` SSE event — emitted at the start of a run.
- */
+/** Payload of a `metadata` event (wrapped under `data`). */
 export interface MetadataEventData {
   run_id: string;
   thread_id: string;
   workflow_name: string;
   workflow_version: string;
-  /** Ordered list of node IDs in the execution plan. */
-  nodes: string[];
+  /** `"llm"` (token-streaming) or `"workflow"`. */
+  workflow_type: string;
+  timestamp: string;
 }
 
-/**
- * Data payload for a `node_update` SSE event — emitted as each node changes state.
- */
+/** Payload of a `node_started` event (flat — fields sit alongside `type`). */
+export interface NodeStartedEventData {
+  /** The node ID. */
+  node: string;
+  /** The node display name. */
+  name: string;
+  timestamp: string;
+  /** Node-specific start metadata (shape varies by node type). */
+  metadata?: Record<string, unknown>;
+}
+
+/** Payload of a `node_update` event (flat — fields sit alongside `type`). */
 export interface NodeUpdateEventData {
-  node_id: string;
-  node_type: string;
-  status: 'started' | 'completed' | 'error';
-  /** Node output value (present when `status` is `"completed"`). */
-  output?: unknown;
-  /** Error message (present when `status` is `"error"`). */
-  error?: string;
-  /** How long the node took to execute, in milliseconds. */
-  execution_time_ms?: number;
+  /** The node ID. */
+  node: string;
+  /** The node display name. */
+  name: string;
+  timestamp: string;
+  /** Node output (shape varies by node type). */
+  output?: Record<string, unknown>;
 }
 
-/**
- * Data payload for an `interrupt` SSE event — execution is paused for human input.
- */
+/** Payload of an `interrupt` event (wrapped under `data`). */
 export interface InterruptEventData {
   message: string;
-  /** Current workflow state at the point of interruption. */
-  state: Record<string, unknown>;
-  /** Instructions describing what the human should supply as a resume value. */
-  resume_instructions?: string;
-  /** ID of the node that triggered the interrupt. */
-  node_id: string;
+  /** Structured interrupt payload, if any. */
+  data: Record<string, unknown>;
+  /** JSON Schema describing the expected resume value, when provided. */
+  resume_schema?: Record<string, unknown>;
+  /** Example resume values, when provided. */
+  examples?: unknown;
 }
 
-/**
- * Data payload for a `resumed` SSE event — a previously interrupted run has continued.
- */
+/** Payload of a `resumed` event (wrapped under `data`). */
 export interface ResumedEventData {
   run_id: string;
   thread_id: string;
+  resume_value: unknown;
+  timestamp: string;
 }
 
-/**
- * Data payload for the `done` SSE event — the workflow has finished executing.
- */
+/** Payload of a `done` event (wrapped under `data`). */
 export interface DoneEventData {
-  final_state: Record<string, unknown>;
-  steps_executed: number;
-  total_execution_time_ms: number;
+  message: string;
 }
 
-/**
- * Data payload for an `error` SSE event — an unrecoverable error occurred.
- */
+/** Payload of an `error` event (flat — fields sit alongside `type`). */
 export interface ErrorEventData {
-  error_message: string;
+  message: string;
   error_type?: string;
-  /** ID of the node where the error originated, if applicable. */
-  node_id?: string;
-  stack_trace?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -205,22 +235,26 @@ export interface ErrorEventData {
 // ---------------------------------------------------------------------------
 
 /**
- * A type-safe discriminated union of all possible SSE events emitted during
- * a workflow run or resume stream.
+ * A type-safe discriminated union of every SSE frame emitted during a workflow
+ * run or resume stream. Discriminate on the `type` field (NOT `event`, which is
+ * always `"message"` for these data-only streams):
  *
- * Discriminate on the `event` field to narrow the `data` type:
  * ```ts
- * for await (const evt of stream) {
- *   if (evt.event === 'done') {
- *     console.log(evt.data.final_state);
+ * for await (const evt of client.executions.listen(runId)) {
+ *   switch (evt.type) {
+ *     case 'node_update': console.log(evt.node, evt.output); break; // flat
+ *     case 'done':        console.log(evt.data.message);           break; // wrapped
+ *     case 'error':       console.error(evt.message);              break; // flat
  *   }
  * }
  * ```
  */
 export type WorkflowSSEEvent =
-  | { event: 'metadata'; data: MetadataEventData }
-  | { event: 'node_update'; data: NodeUpdateEventData }
-  | { event: 'interrupt'; data: InterruptEventData }
-  | { event: 'resumed'; data: ResumedEventData }
-  | { event: 'done'; data: DoneEventData }
-  | { event: 'error'; data: ErrorEventData };
+  | ({ type: 'metadata' } & { data: MetadataEventData })
+  | ({ type: 'node_started' } & NodeStartedEventData)
+  | ({ type: 'node_update' } & NodeUpdateEventData)
+  | ({ type: 'interrupt' } & { data: InterruptEventData })
+  | ({ type: 'resumed' } & { data: ResumedEventData })
+  | ({ type: 'done' } & { data: DoneEventData })
+  | ({ type: 'cancelled' } & { data: Record<string, unknown> | null })
+  | ({ type: 'error' } & ErrorEventData);

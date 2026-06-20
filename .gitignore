@@ -12,3 +12,10 @@ SDK_REFERENCE.md
 # modulex-meta orchestration state (local-only for public repos)
 .mxmeta/
 .claude/
+
+# Internal refactor audit & AI assistant context (local-only, never publish)
+BIG_REFACTOR_AUDIT/
+CLAUDE.md
+CLAUDE.local.md
+.agents/
+.cursor/

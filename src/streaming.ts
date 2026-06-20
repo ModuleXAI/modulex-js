@@ -2,14 +2,30 @@ import { StreamError } from './errors';
 
 /** A parsed SSE event. */
 export interface SSEEvent {
-  /** Event type (e.g., "node_update", "done", "error"). */
+  /**
+   * The raw SSE `event:` field, or "message" when the frame has no `event:` line.
+   * NOTE: most ModuleX streams (workflows, composer, assistant, credentials) emit
+   * data-only frames, so `event` is "message" for them — prefer {@link SSEEvent.type}
+   * for discriminating. The chats stream is the exception and uses real `event:` lines.
+   */
   event: string;
+  /**
+   * The semantic event type to discriminate on. Resolves to `data.type` when the
+   * JSON payload carries a `type` field (data-only streams), otherwise falls back to
+   * the `event:` field (chats stream). This is the value to switch on in consumers.
+   */
+  type: string;
   /** Parsed JSON data payload. */
   data: Record<string, unknown>;
   /** Optional event ID. */
   id?: string;
   /** Optional reconnection interval in ms. */
   retry?: number;
+}
+
+/** Resolve the semantic event type: `data.type` if present, else the `event:` field. */
+function resolveEventType(event: string, data: Record<string, unknown>): string {
+  return typeof data.type === 'string' && data.type ? data.type : event;
 }
 
 /**
@@ -60,8 +76,10 @@ export async function* parseSSEStream(
               parsedData = { raw: dataStr };
             }
 
+            const ev = currentEvent || 'message';
             yield {
-              event: currentEvent || 'message',
+              event: ev,
+              type: resolveEventType(ev, parsedData),
               data: parsedData,
               id: currentId,
               retry: currentRetry,
@@ -122,8 +140,10 @@ export async function* parseSSEStream(
       } catch {
         parsedData = { raw: dataStr };
       }
+      const ev = currentEvent || 'message';
       yield {
-        event: currentEvent || 'message',
+        event: ev,
+        type: resolveEventType(ev, parsedData),
         data: parsedData,
         id: currentId,
         retry: currentRetry,

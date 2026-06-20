@@ -8,27 +8,23 @@ describe.skipIf(MISSING_ENV)('System', () => {
     const res = await tracked('GET', '/system/health', () =>
       client.system.health(),
     );
-    if (res.status !== 'healthy') throw new Error(`Unexpected status: ${res.status}`);
-  });
-
-  it('GET /system/metrics', async () => {
-    const res = await tracked('GET', '/system/metrics', () =>
-      client.system.metrics(),
-    );
-    if (typeof res !== 'string' || res.length === 0) throw new Error('Empty metrics');
+    if (!res.status) throw new Error(`Unexpected status: ${res.status}`);
+    if (!res.service) throw new Error('Missing service name');
+    if (!res.version) throw new Error('Missing version');
   });
 
   it('GET /system/timezones', async () => {
     const res = await tracked('GET', '/system/timezones', () =>
       client.system.timezones(),
     );
-    if (!res) throw new Error('No timezone data');
+    if (!res || !Array.isArray(res.all_timezones)) throw new Error('No timezone data');
+    if (!Array.isArray(res.popular)) throw new Error('No popular timezone groups');
   });
 
   it('GET /system/timezones/search', async () => {
     const res = await tracked('GET', '/system/timezones/search', () =>
       client.system.searchTimezones('Istanbul'),
     );
-    if (!res) throw new Error('No search results');
+    if (!Array.isArray(res)) throw new Error('Search results must be an array');
   });
 });

@@ -9,6 +9,7 @@ import type {
   UserResponse,
   OrganizationsResponse,
   InvitationsResponse,
+  InvitationResponse,
   SuccessResponse,
   LeaveResponse,
 } from '../types';
@@ -53,13 +54,14 @@ export class Auth extends BaseResource {
   /**
    * POST /auth/invitations/{id}/accept
    *
-   * Accepts a pending organization invitation.
+   * Accepts a pending organization invitation. On success the response
+   * includes the joined organization and the granted role.
    */
   async acceptInvitation(
     invitationId: string,
     options?: RequestOptions,
-  ): Promise<SuccessResponse> {
-    return this._post<SuccessResponse>(
+  ): Promise<InvitationResponse> {
+    return this._post<InvitationResponse>(
       `/auth/invitations/${invitationId}/accept`,
       undefined,
       options,

@@ -73,13 +73,10 @@ describe.skipIf(MISSING_ENV)('Composer', () => {
     );
   });
 
-  it('GET /composer/chat/workflow/{workflowId}/history', async () => {
-    if (!helperWorkflowId) {
-      skip('GET', '/composer/chat/workflow/{workflowId}/history', 'No workflow');
-      return;
-    }
-    await tracked('GET', `/composer/chat/workflow/${helperWorkflowId}/history`, () =>
-      client.composer.history(helperWorkflowId, { limit: 5 }),
+  it('GET /composer/chats — list user chats', async () => {
+    void helperWorkflowId;
+    await tracked('GET', '/composer/chats', () =>
+      client.composer.list({ limit: 5 }),
     );
   });
 

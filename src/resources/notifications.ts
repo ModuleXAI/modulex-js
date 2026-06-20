@@ -8,6 +8,7 @@ import type { RequestOptions } from '../types';
 import type {
   NotificationListResponse,
   CreateNotificationParams,
+  CreateNotificationResponse,
 } from '../types';
 
 /**
@@ -27,12 +28,20 @@ export class Notifications extends BaseResource {
    * POST /notifications/organization
    *
    * Creates a new notification for the organization or a specific user.
+   *
+   * Requires an organization context: an `X-Organization-ID` header is sent
+   * automatically from the client's configured `organizationId` or from
+   * `options.organizationId`. If neither is set, no header is sent and the
+   * backend responds with HTTP 400 ("X-Organization-ID header is required").
+   *
+   * @returns The created notification wrapped in a `{ success, notification }`
+   *   envelope.
    */
   async create(
     params: CreateNotificationParams,
     options?: RequestOptions,
-  ): Promise<Record<string, unknown>> {
-    return this._post<Record<string, unknown>>(
+  ): Promise<CreateNotificationResponse> {
+    return this._post<CreateNotificationResponse>(
       '/notifications/organization',
       params,
       options,

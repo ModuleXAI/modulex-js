@@ -141,8 +141,12 @@ export interface LLMNodeConfig {
   system_prompt?: string;
   /** User prompt template. */
   user_prompt?: string;
+  /** @deprecated Use `user_prompt`. Kept as a backward-compatible alias; the backend copies it into `user_prompt`. */
+  prompt_template?: string;
   /** JSON Schema describing the expected structured output format. */
   structured_output_schema?: Record<string, unknown>;
+  /** When `true`, enforce strict structured-output schema validation. */
+  structured_output_strict?: boolean;
 }
 
 /**
@@ -161,7 +165,8 @@ export interface AgentNodeConfig {
   llm: LLMConfig;
   /** Tools available to this agent. */
   tools?: ToolDefinition[];
-  system_prompt?: string;
+  /** Required by the backend — an agent node without a system prompt is rejected (422). */
+  system_prompt: string;
   user_prompt?: string;
   /** Maximum tool-call iterations before the agent yields. */
   max_iterations?: number;
@@ -169,10 +174,17 @@ export interface AgentNodeConfig {
 }
 
 /**
- * Configuration for a `function` node — executes arbitrary registered code.
- * Shape is integration-specific and passed through without transformation.
+ * Configuration for a `function` node — executes a registered function.
+ * The backend requires `function_name`; `input_mapping` and `parameters` are
+ * optional. Additional integration-specific keys pass through untransformed.
  */
 export interface FunctionNodeConfig {
+  /** Name of the registered function to invoke (required by the backend). */
+  function_name?: string;
+  /** Maps state fields to function input parameters. */
+  input_mapping?: Record<string, string>;
+  /** Static parameters passed to the function. */
+  parameters?: Record<string, unknown>;
   [key: string]: unknown;
 }
 
@@ -196,6 +208,8 @@ export interface LoopConfig {
   mode: string;
   /** Fixed iteration count for `"for"` mode. */
   iterations?: number;
+  /** State field holding a dynamic iteration count for `"for"` mode. */
+  iterations_ref?: string;
   /** State field containing the collection to iterate over for `"foreach"` mode. */
   collection?: string;
   /** Boolean expression used for `"while"` mode. */
@@ -208,6 +222,12 @@ export interface LoopConfig {
   exit_target?: string;
   /** Hard upper bound on iterations to prevent infinite loops. */
   max_iterations?: number;
+  /** Run `"foreach"` iterations in parallel rather than sequentially. */
+  parallel?: boolean;
+  /** Accumulate iteration results instead of overwriting. */
+  accumulate?: boolean;
+  /** State field to accumulate iteration results from/into. */
+  accumulate_from?: string;
 }
 
 /**
@@ -302,10 +322,10 @@ export interface NodeDefinition {
   description?: string;
   /** Whether the node participates in execution. Defaults to `true`. */
   enabled?: boolean;
-  /** Canvas X position (used by the visual editor). */
-  x?: number;
-  /** Canvas Y position (used by the visual editor). */
-  y?: number;
+  /** Canvas X position. Required by the backend (create/update return 422 without it). */
+  x: number;
+  /** Canvas Y position. Required by the backend (create/update return 422 without it). */
+  y: number;
   retry_config?: RetryConfig;
   llm_config?: LLMNodeConfig;
   tool_config?: ToolNodeConfig;
@@ -406,7 +426,10 @@ export interface WorkflowSummary {
   tags: string[];
   created_at: string;
   updated_at: string;
-  creator_id: string;
+  /** Null for workflows with no recorded creator (e.g. system/seed workflows). */
+  creator_id: string | null;
+  /** Default state input payload returned on each list row. */
+  input?: Record<string, unknown>;
 }
 
 /**
@@ -414,6 +437,8 @@ export interface WorkflowSummary {
  */
 export interface WorkflowResponse extends WorkflowSummary {
   workflow_schema: WorkflowDefinition;
+  /** Execution config defaults returned by create/get/update. */
+  config?: Partial<WorkflowConfig>;
   edit_version?: number;
   last_edited_by?: string | null;
   last_edited_at?: string | null;
@@ -434,7 +459,6 @@ export interface WorkflowListParams {
   search?: string;
   page?: number;
   pageSize?: number;
-  organizationId?: string;
 }
 
 /**
@@ -476,7 +500,19 @@ export interface BuilderDetailsParams {
   category?: string;
   /** Filter to a specific integration name. */
   integrationName?: string;
-  organizationId?: string;
+}
+
+/**
+ * A rich descriptor for a single builder node type.
+ */
+export interface BuilderNodeTypeDescriptor {
+  label?: string;
+  description?: string;
+  default_schema?: Record<string, unknown>;
+  output_schema?: Record<string, unknown>;
+  providers?: unknown[];
+  integrations?: unknown[];
+  [key: string]: unknown;
 }
 
 /**
@@ -484,12 +520,40 @@ export interface BuilderDetailsParams {
  * available node types, integration categories, and their counts.
  */
 export interface BuilderDetailsResponse {
-  /** Map of node type identifier to its descriptor. */
-  node_types: Record<string, unknown>;
-  /** Available integration categories. */
-  categories: string[];
-  /** Count breakdown by category or type. */
-  counts: Record<string, number>;
+  /** Map of node type identifier to its rich descriptor. */
+  node_types: Record<string, BuilderNodeTypeDescriptor>;
+  /** Available integration items grouped by category. */
+  categories: {
+    tools: string[];
+    functions: string[];
+    transformers: string[];
+  };
+  /** Count breakdown. Known keys: integrations, functions, transformers, providers. */
+  counts: {
+    integrations?: number;
+    functions?: number;
+    transformers?: number;
+    providers?: number;
+    [key: string]: number | undefined;
+  };
+  /** Builder feature flags (e.g. array-spread support). */
+  features?: {
+    array_spread: boolean;
+  };
   /** Whether the response was served from cache. */
   cached: boolean;
 }
+
+// ---------------------------------------------------------------------------
+// Workflow changes (collaboration SSE)
+// ---------------------------------------------------------------------------
+
+/**
+ * A real-time collaboration event from the `GET /workflows/{id}/changes`
+ * SSE stream. This is a data-only stream; discriminate on `type`.
+ */
+export type WorkflowChangeEvent =
+  | { type: 'connected'; workflow_id: string; edit_version: number }
+  | ({ type: 'workflow_updated' } & Record<string, unknown>)
+  | ({ type: 'user_joined' } & Record<string, unknown>)
+  | ({ type: 'user_left' } & Record<string, unknown>);

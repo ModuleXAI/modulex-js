@@ -28,13 +28,17 @@ export interface SuccessResponse {
 
 /**
  * Generic paginated list envelope.
- * The API uses different pagination styles across resources; all optional
- * fields that a particular endpoint may or may not include are represented here.
+ * The API uses different pagination styles across resources (page+limit,
+ * offset, cursor/has_next); every field a particular endpoint may or may not
+ * include is optional here. `total` is optional because cursor/has_next style
+ * endpoints do not return a total count.
  *
  * @template T - The type of each item in the collection.
  */
 export interface PaginatedList<T> {
-  total: number;
+  /** The page of items. Some endpoints nest items under a resource-specific key instead. */
+  items?: T[];
+  total?: number;
   page?: number;
   page_size?: number;
   total_pages?: number;

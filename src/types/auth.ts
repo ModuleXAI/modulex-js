@@ -25,14 +25,23 @@ export interface UserResponse {
 
 /**
  * Lightweight organization membership record returned inside user-centric responses.
+ *
+ * Wire shape matches the backend `get_user_organizations` projection
+ * (`{id, slug, name, domain, role, joined_at, is_default}`). Fields are
+ * snake_case to mirror the API response exactly.
  */
 export interface OrganizationInfo {
   id: string;
   name: string;
   slug: string;
+  /** The organization's email domain, or `null` when unset. */
+  domain: string | null;
   /** The calling user's role inside this organization. */
   role: string;
-  created_at: string;
+  /** ISO-8601 timestamp of when the user joined this organization. */
+  joined_at: string;
+  /** Whether this organization is the user's default organization. */
+  is_default: boolean;
 }
 
 /**
@@ -46,18 +55,48 @@ export interface OrganizationsResponse {
 }
 
 /**
+ * The organization an invitation grants membership to.
+ */
+export interface InvitationOrganization {
+  id: string;
+  name: string;
+  slug: string | null;
+  /** The organization's email domain, or `null` when unset. */
+  domain: string | null;
+}
+
+/**
+ * The user who issued an invitation.
+ */
+export interface InvitationInviter {
+  id: string;
+  email: string;
+  username: string | null;
+}
+
+/**
  * A single organization invitation object.
+ *
+ * Wire shape matches the backend `get_user_all_pending_invitations_optimized`
+ * projection. The organization and inviter are nested objects (not flat
+ * `organization_id` / `invited_email` fields).
  */
 export interface InvitationObject {
   id: string;
-  organization_id: string;
-  organization_name?: string;
-  invited_email: string;
+  /** The organization the invitation grants access to. */
+  organization: InvitationOrganization;
+  /** The user who sent the invitation. */
+  invited_by: InvitationInviter;
   role: string;
   status: string;
-  invitation_message?: string;
+  invitation_message?: string | null;
   created_at: string;
-  expires_at?: string;
+  expires_at?: string | null;
+  /**
+   * Whole days remaining until the invitation expires. Can be `0` for
+   * invitations expiring in under 24 hours (derived from `timedelta.days`).
+   */
+  days_until_expiry: number;
 }
 
 /**
@@ -66,16 +105,32 @@ export interface InvitationObject {
 export interface InvitationsResponse {
   success: boolean;
   invitations: InvitationObject[];
-  total: number;
+  /** Total number of pending invitations returned. */
+  total_count: number;
 }
 
 /**
- * Response from accepting or rejecting a single invitation.
+ * The organization details returned when an invitation is accepted.
+ */
+export interface AcceptedInvitationOrganization {
+  id: string;
+  name: string;
+  slug: string;
+}
+
+/**
+ * Response from accepting an invitation.
+ *
+ * On success the backend returns the joined organization and the granted
+ * role in addition to `success` / `message`.
  */
 export interface InvitationResponse {
   success: boolean;
   message?: string;
-  invitation: InvitationObject;
+  /** The organization the user joined. */
+  organization?: AcceptedInvitationOrganization;
+  /** The role the user was granted in the organization. */
+  role?: string;
 }
 
 /**
@@ -85,8 +140,10 @@ export interface LeaveResponse {
   success: boolean;
   message: string;
   /** The organization that was left. */
-  left_organization: { id: string; name: string };
-  /** The organizations the user still belongs to. */
-  remaining_organizations: { id: string; name: string }[];
+  left_organization: { id: string; name: string; slug: string };
+  /**
+   * The organizations the user still belongs to, as full membership records.
+   */
+  remaining_organizations: OrganizationInfo[];
   total_remaining: number;
 }

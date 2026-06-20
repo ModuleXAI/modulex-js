@@ -28,72 +28,163 @@ export interface BrowseParams {
 }
 
 // ---------------------------------------------------------------------------
+// Integration catalog shapes
+// ---------------------------------------------------------------------------
+
+/**
+ * Integration metadata as returned by list/browse endpoints
+ * (`/integrations/browse`, `/integrations/tools`, `/integrations/llm-providers`,
+ * `/integrations/knowledge-providers`).
+ *
+ * Mirrors the backend `IntegrationMetadata` model. Wire field names are
+ * snake_case and are returned as-is by the client (no camelCase conversion).
+ *
+ * Note: when `include_details=false` on browse, the backend strips
+ * `actions`, `models`, and `auth_schemas` from each element, hence those
+ * fields are optional.
+ */
+export interface IntegrationMetadata {
+  /** Canonical integration name / identifier. */
+  name: string;
+  /** Human-readable display name (always present). */
+  display_name: string;
+  /** Human-readable description (always present). */
+  description: string;
+  /** Logo URL, if any. */
+  logo?: string | null;
+  /** Marketing / app URL, if any. */
+  app_url?: string | null;
+  /** Documentation URL, if any. */
+  docs_url?: string | null;
+  /** Categories this integration belongs to. */
+  categories?: string[];
+  /** Integration type (e.g. `"tool"`, `"llm_provider"`, `"knowledge_provider"`). */
+  integration_type: string;
+  /** Integration version, if any. */
+  version?: string | null;
+  /** Lifecycle status (e.g. `"active"`). */
+  status?: string;
+  /** Whether this integration is recommended. */
+  recommended?: boolean;
+  /** Tool action descriptors (present only when details are included). */
+  actions?: Record<string, unknown>[];
+  /** LLM provider model descriptors (present only when details are included). */
+  models?: Record<string, unknown>[];
+  /** Auth requirement descriptors (present only when details are included). */
+  auth_schemas?: AuthSchema[];
+  [key: string]: unknown;
+}
+
+/**
+ * Authentication schema descriptor as returned by detail endpoints.
+ *
+ * For `oauth2` schemas the backend enriches the descriptor with the
+ * `supports_modulex_oauth` / `supports_custom_oauth` boolean flags.
+ */
+export interface AuthSchema {
+  /** Auth type discriminator (e.g. `"api_key"`, `"oauth2"`). */
+  auth_type?: string;
+  /** Whether ModuleX-managed OAuth is available for this provider (oauth2 only). */
+  supports_modulex_oauth?: boolean;
+  /** Whether custom OAuth credentials are supported (oauth2 only). */
+  supports_custom_oauth?: boolean;
+  [key: string]: unknown;
+}
+
+/**
+ * Detailed integration information as returned by the detail endpoints
+ * (`/integrations/{integration_name}`, `/integrations/tools/{name}`,
+ * `/integrations/llm-providers/{name}`, `/integrations/knowledge-providers/{name}`).
+ *
+ * Mirrors the backend `IntegrationDetail` model. Wire field names are
+ * snake_case and are returned as-is by the client (no camelCase conversion).
+ */
+export interface IntegrationDetail {
+  /** Canonical integration name / identifier. */
+  name: string;
+  /** Human-readable display name (always present). */
+  display_name: string;
+  /** Human-readable description (always present). */
+  description: string;
+  /** Logo URL, if any. */
+  logo?: string | null;
+  /** Marketing / app URL, if any. */
+  app_url?: string | null;
+  /** Documentation URL, if any. */
+  docs_url?: string | null;
+  /** Categories this integration belongs to. */
+  categories?: string[];
+  /** Integration type (e.g. `"tool"`, `"llm_provider"`, `"knowledge_provider"`). */
+  integration_type: string;
+  /** Integration version, if any. */
+  version?: string | null;
+  /** Auth requirement descriptors (OAuth-enriched where applicable). */
+  auth_schemas?: AuthSchema[];
+  /** Tool action descriptors (for tools). */
+  actions?: Record<string, unknown>[];
+  /** LLM provider model descriptors (for LLM providers). */
+  models?: Record<string, unknown>[];
+  /** Supported feature flags, if any. */
+  features?: string[] | null;
+  /** Arbitrary provider-specific metadata, if any. */
+  metadata?: Record<string, unknown> | null;
+  [key: string]: unknown;
+}
+
+// ---------------------------------------------------------------------------
 // Browse response
 // ---------------------------------------------------------------------------
 
 /**
- * Response from the catalog browse endpoint.
+ * Response from the catalog browse endpoint (`/integrations/browse`).
+ *
+ * Mirrors the backend `BrowseResponse` model. The `integrations` array
+ * carries `IntegrationMetadata` elements (not full details).
  */
 export interface BrowseResponse {
-  integrations: IntegrationResponse[];
+  /** Catalog entries for the current page. */
+  integrations: IntegrationMetadata[];
+  /** Total number of matching integrations across all pages. */
   total: number;
-  page?: number;
-  page_size?: number;
-  total_pages?: number;
+  /** Current page number (always present). */
+  page: number;
+  /** Page size (always present). */
+  page_size: number;
+  /** Whether more pages are available after the current one. */
+  has_more: boolean;
 }
 
 // ---------------------------------------------------------------------------
-// Integration detail shapes
+// Integration detail shapes (per-endpoint aliases)
 // ---------------------------------------------------------------------------
 
 /**
- * Generic integration object as returned by catalog and detail endpoints.
- * Fields beyond the listed ones are provider-specific and accessed via the index signature.
+ * Generic integration detail as returned by `/integrations/{integration_name}`.
+ *
+ * Backend `response_model=IntegrationDetail`.
  */
-export interface IntegrationResponse {
-  name: string;
-  /** Integration category (e.g. `"tool"`, `"llm_provider"`, `"knowledge_provider"`). */
-  type: string;
-  display_name?: string;
-  description?: string;
-  /** Available action/service names. */
-  actions?: string[];
-  /** Authentication schema descriptors. */
-  auth_schemas?: Record<string, unknown>[];
-  icon_url?: string;
-  [key: string]: unknown;
-}
+export type IntegrationResponse = IntegrationDetail;
 
 /**
- * Detailed tool integration response including action definitions.
+ * Detailed tool integration response, including action definitions, as
+ * returned by `/integrations/tools/{integration_name}`.
+ *
+ * Backend `response_model=IntegrationDetail` (`actions` populated).
  */
-export interface ToolIntegrationResponse {
-  integration_name: string;
-  display_name?: string;
-  description?: string;
-  /** Map of action name to action descriptor. */
-  actions?: Record<string, unknown>;
-  auth_types?: string[];
-  [key: string]: unknown;
-}
+export type ToolIntegrationResponse = IntegrationDetail;
 
 /**
- * Detailed LLM provider response including available models.
+ * Detailed LLM provider response, including available models, as returned by
+ * `/integrations/llm-providers/{provider_name}`.
+ *
+ * Backend `response_model=IntegrationDetail` (`models` populated).
  */
-export interface LLMProviderResponse {
-  provider_name: string;
-  display_name?: string;
-  models?: Record<string, unknown>[];
-  auth_types?: string[];
-  [key: string]: unknown;
-}
+export type LLMProviderResponse = IntegrationDetail;
 
 /**
- * Detailed knowledge provider response including supported collection features.
+ * Detailed knowledge provider response as returned by
+ * `/integrations/knowledge-providers/{provider_name}`.
+ *
+ * Backend `response_model=IntegrationDetail`.
  */
-export interface KnowledgeProviderResponse {
-  provider_name: string;
-  display_name?: string;
-  auth_types?: string[];
-  [key: string]: unknown;
-}
+export type KnowledgeProviderResponse = IntegrationDetail;

@@ -19,16 +19,16 @@ describe('Modulex Client', () => {
     expect(client.organizations).toBeDefined();
     expect(client.workflows).toBeDefined();
     expect(client.executions).toBeDefined();
+    expect(client.workflowRuns).toBeDefined();
     expect(client.deployments).toBeDefined();
     expect(client.chats).toBeDefined();
     expect(client.credentials).toBeDefined();
     expect(client.integrations).toBeDefined();
     expect(client.knowledge).toBeDefined();
     expect(client.schedules).toBeDefined();
-    expect(client.templates).toBeDefined();
     expect(client.composer).toBeDefined();
+    expect(client.assistant).toBeDefined();
     expect(client.dashboard).toBeDefined();
-    expect(client.subscriptions).toBeDefined();
     expect(client.notifications).toBeDefined();
     expect(client.system).toBeDefined();
   });

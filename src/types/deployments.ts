@@ -28,12 +28,14 @@ export interface CreateDeploymentParams {
  */
 export interface DeploymentResponse {
   id: string;
-  workflow_id: string;
+  /** Omitted from list rows by the backend; present on detail. */
+  workflow_id?: string;
   name: string;
   version: string;
   deployment_note: string | null;
   schema_image_url: string | null;
-  deployed_by: string;
+  /** Null when the deploying user is unknown/unrecorded. */
+  deployed_by: string | null;
   created_at: string;
   /** Whether this deployment is currently the live (active) version. */
   is_live: boolean;
@@ -62,6 +64,8 @@ export interface DeploymentListResponse {
  * Returned by the get-single-deployment endpoint.
  */
 export interface DeploymentDetailResponse extends DeploymentResponse {
+  /** Free-form description, present only on the detail response. */
+  description?: string | null;
   /** The full workflow graph definition at the time of this deployment. */
   workflow_schema: WorkflowDefinition;
   /** Default input values stored with the deployment. */
@@ -81,8 +85,8 @@ export interface ActivateDeploymentResponse {
   success: boolean;
   message: string;
   deployment_id: string;
-  /** The deployment that was previously live, if any. */
-  previous_live_deployment_id: string | null;
+  /** The deployment that was previously live. Omitted in early-return branches. */
+  previous_live_deployment_id?: string | null;
 }
 
 /**
@@ -91,8 +95,8 @@ export interface ActivateDeploymentResponse {
 export interface DeactivateDeploymentResponse {
   success: boolean;
   message: string;
-  /** The deployment that was deactivated. */
-  previous_live_deployment_id: string;
+  /** The deployment that was deactivated. Omitted in early-return branches. */
+  previous_live_deployment_id?: string | null;
 }
 
 /**

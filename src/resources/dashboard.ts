@@ -12,6 +12,7 @@ import type {
   AnalyticsOverviewResponse,
   AnalyticsToolsParams,
   AnalyticsToolsResponse,
+  AnalyticsLLMUsageParams,
   AnalyticsLLMUsageResponse,
   DashboardUsersParams,
   DashboardUsersResponse,
@@ -89,7 +90,7 @@ export class Dashboard extends BaseResource {
    * Returns LLM token-usage analytics broken down by model and provider.
    */
   async analyticsLlmUsage(
-    params?: AnalyticsToolsParams,
+    params?: AnalyticsLLMUsageParams,
     options?: RequestOptions,
   ): Promise<AnalyticsLLMUsageResponse> {
     return this._get<AnalyticsLLMUsageResponse>('/dashboard/analytics/llm-usage', {

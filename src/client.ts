@@ -1,8 +1,8 @@
 import { type ModulexConfig, type ResolvedConfig, resolveConfig } from './config';
 import {
-  Auth, ApiKeys, Organizations, Workflows, Executions, Deployments,
-  Chats, Credentials, Integrations, Knowledge, Schedules, Templates,
-  Composer, Dashboard, Subscriptions, Notifications, System,
+  Auth, ApiKeys, Organizations, Workflows, Executions, WorkflowRuns, Deployments,
+  Chats, Credentials, Integrations, Knowledge, Schedules,
+  Composer, Assistant, Dashboard, Notifications, System,
 } from './resources';
 
 /**
@@ -31,16 +31,16 @@ export class Modulex {
   private _organizations?: Organizations;
   private _workflows?: Workflows;
   private _executions?: Executions;
+  private _workflowRuns?: WorkflowRuns;
   private _deployments?: Deployments;
   private _chats?: Chats;
   private _credentials?: Credentials;
   private _integrations?: Integrations;
   private _knowledge?: Knowledge;
   private _schedules?: Schedules;
-  private _templates?: Templates;
   private _composer?: Composer;
+  private _assistant?: Assistant;
   private _dashboard?: Dashboard;
-  private _subscriptions?: Subscriptions;
   private _notifications?: Notifications;
   private _system?: System;
 
@@ -68,9 +68,14 @@ export class Modulex {
     return (this._workflows ??= new Workflows(this._config));
   }
 
-  /** Workflow execution endpoints (run, resume, cancel, listen). */
+  /** Workflow execution-control endpoints (run, resume, cancel, listen). */
   get executions(): Executions {
     return (this._executions ??= new Executions(this._config));
+  }
+
+  /** Durable workflow run-history endpoints (list, get persisted runs). */
+  get workflowRuns(): WorkflowRuns {
+    return (this._workflowRuns ??= new WorkflowRuns(this._config));
   }
 
   /** Workflow deployment endpoints. */
@@ -103,24 +108,19 @@ export class Modulex {
     return (this._schedules ??= new Schedules(this._config));
   }
 
-  /** Template endpoints. */
-  get templates(): Templates {
-    return (this._templates ??= new Templates(this._config));
-  }
-
   /** Composer (AI workflow builder) endpoints. */
   get composer(): Composer {
     return (this._composer ??= new Composer(this._config));
   }
 
+  /** Assistant (HITL chat agent) endpoints. */
+  get assistant(): Assistant {
+    return (this._assistant ??= new Assistant(this._config));
+  }
+
   /** Dashboard and analytics endpoints. */
   get dashboard(): Dashboard {
     return (this._dashboard ??= new Dashboard(this._config));
-  }
-
-  /** Subscription and billing endpoints. */
-  get subscriptions(): Subscriptions {
-    return (this._subscriptions ??= new Subscriptions(this._config));
   }
 
   /** Notification endpoints. */
