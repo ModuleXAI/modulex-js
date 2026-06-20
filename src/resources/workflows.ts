@@ -27,6 +27,11 @@ export class Workflows extends BaseResource {
    *
    * Creates a new workflow with the given schema. Returns HTTP 201.
    * Requires organization admin/owner role.
+   *
+   * `params.visibility` is passed through unchanged with no client-side default;
+   * omit it to let the backend default to `"organization"`. `"private"` is no
+   * longer creator-only — it behaves like `"organization"` (any org admin/owner
+   * can view/run/resume).
    */
   async create(
     params: CreateWorkflowParams,

@@ -88,6 +88,11 @@ export class Composer extends BaseResource {
    * data-only stream: each yielded value is a {@link ComposerSSEEvent}
    * discriminated on `type`. A `user_input_request` frame signals a HITL pause —
    * answer it with `resume()`.
+   *
+   * A 404 on connect throws `NotFoundError` before any event is yielded — the
+   * chat/run does not exist OR is not owned by your organization (ownership
+   * failures return an identical 404, not 403). The stream does NOT
+   * auto-reconnect on a 404.
    */
   async *listen(
     composerChatId: string,
@@ -108,9 +113,11 @@ export class Composer extends BaseResource {
    * Answers an open HITL question and resumes the paused run. Returns a NEW
    * `run_id` to listen on.
    *
-   * Errors: 410 if the `requestId` is not pending or already consumed; 403 if
-   * the caller is not the user who triggered the question. The `llm` config is
-   * required in production (the backend returns 400 if omitted).
+   * Errors: 404 (a `NotFoundError`) when the chat does not exist OR is not owned
+   * by your organization (ownership failures return an identical 404, not 403);
+   * 410 if the `requestId` is not pending or already consumed; 403 if the caller
+   * is not the user who triggered the question. The `llm` config is required in
+   * production (the backend returns 400 if omitted).
    */
   async resume(
     composerChatId: string,
@@ -220,6 +227,10 @@ export class Composer extends BaseResource {
    * POST /composer/chat/{composerChatId}/cancel
    *
    * Cancels the in-progress run for a Composer chat session.
+   *
+   * Throws `NotFoundError` on HTTP 404 — the chat does not exist OR is not owned
+   * by your organization (ownership failures return an identical 404, not 403,
+   * so there is no existence leak).
    */
   async cancel(
     composerChatId: string,

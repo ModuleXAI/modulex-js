@@ -50,7 +50,9 @@ export class Organizations extends BaseResource {
   /**
    * POST /organizations/invite
    *
-   * Sends an invitation email to add a user to the current organization.
+   * Sends an invitation email to add a user to the current organization. The
+   * invited user joins as `admin`; the org `member` role was retired, so the
+   * backend rejects `role: 'member'` with HTTP 422.
    */
   async invite(params: InviteParams, options?: RequestOptions): Promise<SuccessResponse> {
     return this._post<SuccessResponse>('/organizations/invite', params, options);
@@ -88,7 +90,9 @@ export class Organizations extends BaseResource {
   /**
    * PUT /organizations/{orgId}/users/{userId}/role
    *
-   * Updates a member's role within an organization.
+   * Updates a member's role within an organization. Only `'admin'` is accepted —
+   * the org `member` role was retired, so the backend rejects `role: 'member'`
+   * with HTTP 422.
    */
   async updateRole(
     organizationId: string,

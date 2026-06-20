@@ -383,7 +383,12 @@ export interface CreateWorkflowParams {
   category?: string;
   /** Lifecycle status (e.g. `"draft"`, `"published"`). */
   status?: string;
-  /** Sharing visibility (e.g. `"private"`, `"organization"`, `"public"`). */
+  /**
+   * Sharing visibility — one of `"private"`, `"organization"`, `"public"`, or
+   * `"system"`. Omit to let the backend default to `"organization"` (there is no
+   * client-side default). Note: `"private"` is no longer creator-only — it now
+   * behaves like `"organization"` (any org admin/owner can view/run/resume).
+   */
   visibility?: string;
   /** Default input values shown in the run panel. */
   input?: Record<string, unknown>;
@@ -402,6 +407,11 @@ export interface UpdateWorkflowParams {
   tags?: string[];
   category?: string;
   status?: string;
+  /**
+   * Sharing visibility — `"private"`, `"organization"`, `"public"`, or
+   * `"system"`. `"private"` is no longer creator-only; it behaves like
+   * `"organization"`.
+   */
   visibility?: string;
   workflowSchema?: WorkflowDefinition;
   input?: Record<string, unknown>;
@@ -421,6 +431,11 @@ export interface WorkflowSummary {
   description: string | null;
   version: string;
   status: string;
+  /**
+   * Sharing visibility — one of `"private"`, `"organization"`, `"public"`, or
+   * `"system"`. New workflows default to `"organization"`; `"private"` is no
+   * longer creator-only and behaves like `"organization"`.
+   */
   visibility: string;
   category: string | null;
   tags: string[];
@@ -455,6 +470,10 @@ export interface WorkflowResponse extends WorkflowSummary {
 export interface WorkflowListParams {
   status?: string;
   category?: string;
+  /**
+   * Filter by sharing visibility — `"private"`, `"organization"`, `"public"`, or
+   * `"system"`.
+   */
   visibility?: string;
   search?: string;
   page?: number;

@@ -84,6 +84,11 @@ export class Assistant extends BaseResource {
    * data-only stream: each yielded value is an {@link AssistantSSEEvent}
    * discriminated on `type`. A `user_input_request` frame signals a HITL pause —
    * answer it with `resume()`.
+   *
+   * A 404 on connect throws `NotFoundError` before any event is yielded — the
+   * chat/run does not exist OR is not owned by your organization (ownership
+   * failures return an identical 404, not 403). The stream does NOT
+   * auto-reconnect on a 404.
    */
   async *listen(
     chatId: string,
@@ -104,9 +109,10 @@ export class Assistant extends BaseResource {
    * Answers an open HITL question and resumes the paused run. Returns a NEW
    * `run_id` to listen on.
    *
-   * Errors: 404 chat not found; 410 if the question was already answered or
-   * cancelled; 403 if the caller is not the user who triggered it. `llm` is
-   * required (400 if omitted).
+   * Errors: 404 (a `NotFoundError`) when the chat is not found OR is not owned by
+   * your organization (ownership failures return an identical 404, not 403); 410
+   * if the question was already answered or cancelled; 403 if the caller is not
+   * the user who triggered it. `llm` is required (400 if omitted).
    */
   async resume(
     chatId: string,
@@ -137,8 +143,10 @@ export class Assistant extends BaseResource {
    * POST /assistant/chat/{chatId}/cancel
    *
    * Cancels the in-progress run and clears any pending HITL question. The
-   * returned `run_id` is the run that was cancelled. Errors: 404 chat not found;
-   * 400 if there is no active execution.
+   * returned `run_id` is the run that was cancelled. Errors: 404 (a
+   * `NotFoundError`) when the chat is not found OR is not owned by your
+   * organization (ownership failures return an identical 404, not 403); 400 if
+   * there is no active execution.
    */
   async cancel(
     chatId: string,

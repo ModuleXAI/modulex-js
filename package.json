@@ -46,7 +46,7 @@
     "build": "tsup",
     "clean": "rm -rf dist coverage",
     "dev": "tsup --watch",
-    "lint": "tsc --noEmit",
+    "lint": "tsc --noEmit && tsc -p tsconfig.typecheck.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

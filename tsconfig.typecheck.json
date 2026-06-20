@@ -1,0 +1,13 @@
+{
+  "//": "Type-checks the type-level guards under tests/types/*.test-d.ts. Scoped to ONLY those files (plus their src imports) so the suite's pre-existing test type errors stay out of the program. Run via `pnpm lint`.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["tests/types/**/*.test-d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Modulex } from '../src/client';
+import { NotFoundError } from '../src/errors';
 
 function jsonResponse(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -124,6 +125,47 @@ describe('Executions Resource', () => {
     expect(events[1].node).toBe('n1'); // flat
     expect(events[2].type).toBe('done');
     expect(events[2].data.message).toBe('Workflow completed successfully'); // wrapped
+  });
+
+  // Run-thread ownership is now deny-by-default: a run/thread not owned by your
+  // org returns an identical 404 (no existence leak), surfaced as NotFoundError.
+  it('getState() throws NotFoundError on 404 (not found OR not owned by your org), no retry', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ detail: 'Not found' }, 404));
+
+    await expect(client.executions.getState('t-unknown')).rejects.toThrow(NotFoundError);
+    // 404 is non-retryable — exactly one fetch.
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancel() throws NotFoundError on 404 (not found OR not owned by your org), no retry', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ detail: 'Not found' }, 404));
+
+    await expect(client.executions.cancel('r-unknown')).rejects.toThrow(NotFoundError);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('resume() throws NotFoundError on 404 (not found OR not owned by your org), no retry', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({ detail: 'Not found' }, 404));
+
+    await expect(
+      client.executions.resume({ threadId: 't-unknown', runId: 'r1', resumeValue: 'x' }),
+    ).rejects.toThrow(NotFoundError);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('listen() throws NotFoundError on a 404 connect with exactly one fetch (no reconnect loop)', async () => {
+    // mockResolvedValue (not Once): more responses are available, so calling
+    // fetch more than once would be observable — proving there is no reconnect.
+    mockFetch.mockResolvedValue(jsonResponse({ detail: 'Not found' }, 404));
+
+    const drain = async () => {
+      for await (const _event of client.executions.listen('r-unknown')) {
+        // unreachable — the 404 throws on connect, before any frame is yielded
+      }
+    };
+
+    await expect(drain()).rejects.toThrow(NotFoundError);
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });
 

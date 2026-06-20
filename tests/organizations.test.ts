@@ -125,6 +125,28 @@ describe('Organizations Resource', () => {
     expect(body.role).toBe('admin');
   });
 
+  it('updateRole/invite send role: "admin" on the wire (member retired)', async () => {
+    // The org `member` role was retired; the only request role that goes on the
+    // wire is 'admin'. The compile-time guarantee that 'member' is rejected lives
+    // in tests/types/role-request-types.test-d.ts (type-checked by `pnpm lint`
+    // via tsconfig.typecheck.json).
+    mockFetch.mockResolvedValueOnce(
+      jsonResponse({
+        success: true,
+        message: 'updated',
+        user_id: 'u1',
+        organization_id: 'o1',
+        new_role: 'admin',
+      }),
+    );
+    await client.organizations.updateRole('o1', 'u1', { role: 'admin' });
+    expect(JSON.parse(mockFetch.mock.calls[0][1].body).role).toBe('admin');
+
+    mockFetch.mockResolvedValueOnce(jsonResponse({ success: true, message: 'invited' }));
+    await client.organizations.invite({ invitedEmail: 'a@b.com', role: 'admin' });
+    expect(JSON.parse(mockFetch.mock.calls[1][1].body).role).toBe('admin');
+  });
+
   it('should remove a user (DELETE /organizations/{orgId}/users/{userId})', async () => {
     mockFetch.mockResolvedValueOnce(jsonResponse({ success: true, message: 'removed' }));
 

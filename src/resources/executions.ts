@@ -47,6 +47,10 @@ export class Executions extends BaseResource {
    *
    * Returns the persisted state snapshot of a workflow thread at its latest
    * checkpoint.
+   *
+   * Throws `NotFoundError` on HTTP 404 — the thread does not exist OR is not
+   * owned by your organization. Ownership failures return an identical 404 (not
+   * 403) by design, so there is no existence leak.
    */
   async getState(
     threadId: string,
@@ -60,8 +64,10 @@ export class Executions extends BaseResource {
    *
    * Resumes a workflow that is waiting at an interrupt node.
    *
-   * Guard responses: 400 (missing `resumeValue` or `runId`), 403 (the run
-   * belongs to another organization), 404 (no checkpoint for the thread).
+   * Guard responses: 400 (missing `resumeValue` or `runId`); 404 — a
+   * `NotFoundError` — when there is no checkpoint for the thread OR the
+   * run/thread is not owned by your organization. Ownership failures return an
+   * identical 404 (not 403) by design, so there is no existence leak.
    */
   async resume(
     params: WorkflowResumeParams,
@@ -81,8 +87,10 @@ export class Executions extends BaseResource {
    * Requests cancellation of an in-progress workflow run. On success the
    * response `status` is `"cancellation_requested"`.
    *
-   * Guard responses: 404 (unknown run), 403 (the run belongs to another
-   * organization), 400 (the run is not in a `running`/`interrupted` state).
+   * Guard responses: 404 — a `NotFoundError` — when the run is unknown OR is not
+   * owned by your organization (ownership failures return an identical 404, not
+   * 403, by design, so there is no existence leak); 400 (the run is not in a
+   * `running`/`interrupted` state).
    */
   async cancel(
     runId: string,
@@ -104,6 +112,11 @@ export class Executions extends BaseResource {
    * a {@link WorkflowSSEEvent} discriminated on its `type` field (`metadata`,
    * `node_started`, `node_update`, `interrupt`, `resumed`, `done`, `cancelled`,
    * `error`). The stream ends after a `done` or `error` event.
+   *
+   * A 404 on connect throws `NotFoundError` before any event is yielded — the
+   * run does not exist OR is not owned by your organization (ownership failures
+   * return an identical 404, not 403). The stream does NOT auto-reconnect on a
+   * 404.
    */
   async *listen(
     runId: string,

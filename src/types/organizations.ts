@@ -66,8 +66,13 @@ export interface LLMsResponse {
 export interface InviteParams {
   /** Email address of the person being invited. */
   invitedEmail: string;
-  /** Role to assign upon acceptance. Defaults to `'member'`. */
-  role?: string;
+  /**
+   * Role to assign upon acceptance. Only `'admin'` is accepted — the org
+   * `member` role was retired (organizations are owner/admin only). Omit to use
+   * the server-side default (`admin`). The backend rejects `role: 'member'` with
+   * HTTP 422.
+   */
+  role?: 'admin';
   /** Optional personal message included in the invitation email. */
   invitationMessage?: string;
 }
@@ -84,8 +89,12 @@ export interface CancelInvitationResponse {
  * Parameters for updating a member's role within an organization.
  */
 export interface RoleUpdateParams {
-  /** New role to assign. */
-  role: 'member' | 'admin';
+  /**
+   * New role to assign. Only `'admin'` is accepted — the org `member` role was
+   * retired (organizations are owner/admin only); the backend rejects
+   * `role: 'member'` with HTTP 422.
+   */
+  role: 'admin';
 }
 
 /**
